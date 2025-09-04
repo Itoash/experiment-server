@@ -1,0 +1,115 @@
+# # Comments are provided throughout this file to help you get started.
+# # If you need more help, visit the Docker Compose reference guide at
+# # https://docs.docker.com/go/compose-spec-reference/
+
+# # Here the instructions define your application as a service called "server".
+# # This service is built from the Dockerfile in the current directory.
+# # You can add other services your application may depend on here, such as a
+# # database or a cache. For examples, see the Awesome Compose repository:
+# # https://github.com/docker/awesome-compose
+
+
+services:
+  # PostgreSQL database service for data/image path storage
+  db:
+    image: postgres:17
+    container_name: experiment_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: experiment_db
+      POSTGRES_USER: researcher
+      POSTGRES_PASSWORD: biodinamica2025!
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=en_US.UTF-8 --lc-ctype=en_US.UTF-8"
+    volumes:
+      # Persistent data storage
+      - postgres_data:/var/lib/postgresql/data
+      # Initialize database schema
+      - ./db/init-scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - experiment_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U researcher -d experiment_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # pgAdmin for database management
+  # pgadmin:
+  #   image: dpage/pgadmin4:latest
+  #   container_name: experiment_db_pgadmin
+  #   restart: unless-stopped
+  #   environment:
+  #     PGADMIN_DEFAULT_EMAIL: admin@experiment.local
+  #     PGADMIN_DEFAULT_PASSWORD: admin
+  #     PGADMIN_CONFIG_SERVER_MODE: 'False'
+  #   volumes:
+  #     - pgadmin_data:/var/lib/pgadmin
+  #   ports:
+  #     - "8080:80"
+  #   networks:
+  #     - experiment_network
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+
+  # Application server service for data visualisation/retrieval
+  server:
+    build: 
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: experiment_server
+    restart: unless-stopped
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: experiment_db
+      DB_USER: researcher
+      DB_PASSWORD: biodinamica2025!
+    volumes:
+      - ./app:/usr/src/app
+      - ./test_experiments/images:/mnt/images  # shared image directory
+    ports:
+      - "8000:8000"
+    networks:
+      - experiment_network
+    depends_on:
+      db:
+        condition: service_healthy
+    
+  # Data loader service for building the database from files
+  dataloader:
+    build: 
+      context: ./dataloader
+      dockerfile: Dockerfile  # or a custom name if you prefer
+    container_name: experiment_dataloader
+    restart: "no"
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: experiment_db
+      DB_USER: researcher
+      DB_PASSWORD: biodinamica2025!
+      DATASET_PATH: /mnt/data/
+      IMAGE_PATH: /mnt/images/
+    volumes:
+      - ./app:/usr/src/app
+      - ./test_experiments/images:/mnt/images  # shared image directory
+      - ./test_experiments/data:/mnt/data        # shared data directory
+    networks:
+      - experiment_network
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["python", "data_loader.py", "--data-dir", "/mnt/data", "--image-dir", "/mnt/images"]
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  experiment_network:
+    driver: bridge

@@ -1,0 +1,21 @@
+name,unit,type,description
+position_x, pixels,numeric,Position of the cell in the X axis
+position_y, pixels,numeric,Position of the cell in the Y axis
+area, pixels,numeric,Area of the cell
+Ellipse angle, degrees,numeric,Angle of the fitted ellipse
+Ellipse major, pixels,numeric,Length of the major axis of the fitted ellipse
+Ellipse minor, pixels,numeric,Length of the minor axis of the fitted ellipse
+DC mean, intensity,numeric,Mean intensity of the averaged image (DC)
+DC min, intensity,numeric,Minimum intensity of the averaged image (DC)
+DC max, intensity,numeric,Maximum intensity of the averaged image (DC)
+AC mean, amplitude,numeric,Mean amplitude of the amplitude image (AC)
+AC min, amplitude,numeric,Minimum amplitude of the amplitude image (AC)
+AC max, amplitude,numeric,Maximum amplitude of the amplitude image (AC)
+AC interior area, pixels,numeric,Area of the interior region of the amplitude image (AC)
+AC interior mean, amplitude,numeric,Mean amplitude of the interior region of the amplitude image (AC)
+AC contour mean, amplitude,numeric,Mean amplitude of the contour region of the amplitude image (AC)
+AC interior/back mean ratio, ratio (amplitude/amplitude),numeric,Ratio of the mean amplitude of the interior to the back region (AC)
+AC interior/back contrast, ratio (amplitude/amplitude),numeric,Contrast of the interior and back regions (AC)
+AC interior/contour contrast, ratio (amplitude/amplitude),numeric,Contrast of the interior and contour regions (AC)
+AC?DC mean ratio, ratio (amplitude/intensity),numeric,Ratio of the mean amplitude (AC) to the mean intensity (DC)
+AC solidity, ratio (pixels/pixels),numeric,Solidity of the amplitude image (interior area/total area) (AC)
