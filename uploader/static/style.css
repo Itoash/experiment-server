@@ -1,0 +1,407 @@
+/* CSS Reset for better Safari compatibility */
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+* {
+    margin: 0;
+}
+
+html, body {
+    height: 100%;
+}
+
+body { 
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif; 
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    margin: 0; 
+    padding: 20px; 
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased; /* Better font rendering on Safari */
+    -moz-osx-font-smoothing: grayscale;
+    line-height: 1.5;
+}
+
+.container { 
+    max-width: 900px; 
+    margin: 40px auto; 
+    background: #fff; 
+    border-radius: 16px; 
+    box-shadow: 0 10px 30px rgba(0,0,0,0.12); 
+    padding: 40px; 
+    position: relative; /* Ensure proper stacking in Safari */
+    z-index: 1;
+}
+
+h2 { 
+    text-align: center; color: #2d3a4b; margin-bottom: 30px; 
+    font-size: 2rem; font-weight: 600;
+}
+
+form { display: flex; flex-direction: column; gap: 20px; }
+
+.form-group {
+    display: flex; flex-direction: column; gap: 6px;
+}
+
+label { 
+    font-weight: 600; color: #374151; font-size: 0.9rem;
+    text-transform: uppercase; letter-spacing: 0.5px;
+}
+
+input[type='text'], input[type='datetime-local'], input[type='number'], textarea {
+    border: 2px solid #e5e7eb; border-radius: 8px; padding: 12px; 
+    font-size: 1rem; transition: all 0.2s;
+    font-family: inherit;
+}
+
+input[type='text']:focus, input[type='datetime-local']:focus, 
+input[type='number']:focus, textarea:focus {
+    outline: none; border-color: #3b82f6; 
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+input[type='file'] { 
+    border: 2px dashed #d1d5db; border-radius: 8px; padding: 16px; 
+    background: #f9fafb; transition: all 0.2s; cursor: pointer;
+}
+
+input[type='file']:hover {
+    border-color: #3b82f6; background: #eff6ff;
+}
+
+input[type='submit'] { 
+    background: linear-gradient(135deg, #3b82f6, #1d4ed8); 
+    color: #fff; border: none; border-radius: 8px; 
+    padding: 16px 0; font-size: 1.1rem; font-weight: 600;
+    cursor: pointer; transition: all 0.2s; margin-top: 10px;
+}
+
+input[type='submit']:hover { 
+    transform: translateY(-2px); 
+    box-shadow: 0 8px 25px rgba(59, 130, 246, 0.3);
+}
+
+.info-text { 
+    text-align: center; color: #6b7280; margin-top: 24px; 
+    font-style: italic;
+}
+
+.message { 
+    text-align: center; margin: 20px 0; padding: 16px; 
+    border-radius: 8px; font-weight: 500;
+}
+
+.success { 
+    background: #d1fae5; color: #065f46; 
+    border: 2px solid #10b981; 
+}
+
+.error { 
+    background: #fee2e2; color: #991b1b; 
+    border: 2px solid #ef4444; 
+}
+
+.required::after { content: " *"; color: #ef4444; }
+
+.form-row {
+    display: grid; 
+    grid-template-columns: 1fr 1fr; 
+    gap: 16px;
+}
+
+/* Safari fallback for grid and gap */
+@supports not (display: grid) {
+    .form-row {
+        display: flex;
+        flex-wrap: wrap;
+        margin: -8px;
+    }
+    .form-row > * {
+        flex: 1;
+        min-width: 250px;
+        margin: 8px;
+    }
+}
+
+@supports not (gap: 16px) {
+    .form-row {
+        margin: -8px;
+    }
+    .form-row > * {
+        margin: 8px;
+    }
+}
+
+@media (max-width: 640px) {
+    .form-row { 
+        grid-template-columns: 1fr; 
+        display: block; /* Fallback for older Safari */
+    }
+    .form-row > * {
+        margin-bottom: 16px;
+    }
+    .container { 
+        margin: 20px; 
+        padding: 24px; 
+    }
+}
+
+/* Navigation styles */
+.navigation {
+    display: flex; 
+    gap: 20px; 
+    margin-bottom: 30px; 
+    border-bottom: 2px solid #e5e7eb; 
+    padding-bottom: 20px;
+}
+
+/* Safari fallback for gap property */
+@supports not (gap: 20px) {
+    .navigation {
+        display: flex;
+        margin-bottom: 30px;
+        border-bottom: 2px solid #e5e7eb;
+        padding-bottom: 20px;
+    }
+    .navigation > * + * {
+        margin-left: 20px;
+    }
+}
+
+.nav-link {
+    padding: 10px 20px; 
+    text-decoration: none; 
+    color: #6b7280;
+    border-radius: 6px; 
+    font-weight: 500; 
+    transition: all 0.2s ease;
+    display: inline-block;
+}
+
+.nav-link:hover {
+    background: #f3f4f6; 
+    color: #374151;
+}
+
+.nav-link.active {
+    background: #3b82f6; 
+    color: #fff;
+}
+
+/* Experiment list styles */
+.experiment-list {
+    margin-top: 20px;
+}
+
+.experiment-card {
+    background: #f8fafc; 
+    border: 2px solid #e2e8f0; 
+    border-radius: 12px; 
+    padding: 20px; 
+    margin-bottom: 16px;
+    transition: all 0.2s ease;
+    -webkit-transition: all 0.2s ease; /* Safari prefix */
+}
+
+.experiment-card:hover {
+    border-color: #3b82f6; 
+    transform: translateY(-2px);
+    -webkit-transform: translateY(-2px); /* Safari prefix */
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    -webkit-box-shadow: 0 4px 12px rgba(0,0,0,0.1); /* Safari prefix */
+}
+
+.experiment-header {
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+/* Safari flexbox fallback */
+@supports not (display: flex) {
+    .experiment-header {
+        overflow: hidden;
+        margin-bottom: 12px;
+    }
+    .experiment-header h4 {
+        float: left;
+    }
+    .experiment-date {
+        float: right;
+    }
+}
+
+.experiment-header h4 {
+    margin: 0; 
+    color: #1f2937; 
+    font-size: 1.1rem;
+}
+
+.experiment-date {
+    background: #ddd6fe; 
+    color: #5b21b6; 
+    padding: 4px 8px;
+    border-radius: 4px; 
+    font-size: 0.8rem; 
+    font-weight: 500;
+    white-space: nowrap; /* Prevent text wrapping in Safari */
+}
+
+.experiment-details p {
+    margin: 6px 0; 
+    color: #4b5563; 
+    font-size: 0.9rem;
+}
+
+.experiment-actions {
+    margin-top: 16px; 
+    text-align: right;
+}
+
+.btn {
+    padding: 8px 16px; 
+    text-decoration: none; 
+    border-radius: 6px;
+    font-weight: 500; 
+    transition: all 0.2s ease; 
+    -webkit-transition: all 0.2s ease; /* Safari prefix */
+    display: inline-block;
+    border: none; /* Explicit border for Safari */
+    cursor: pointer;
+}
+
+.btn-primary {
+    background: #3b82f6; 
+    color: #fff;
+}
+
+.btn-primary:hover {
+    background: #1d4ed8; 
+    transform: translateY(-1px);
+    -webkit-transform: translateY(-1px); /* Safari prefix */
+}
+
+.no-experiments {
+    text-align: center; color: #6b7280; margin: 40px 0;
+    padding: 40px; border: 2px dashed #d1d5db; border-radius: 12px;
+}
+
+/* Edit form specific styles */
+.edit-info {
+    background: #eff6ff; border: 2px solid #3b82f6; border-radius: 8px;
+    padding: 16px; margin-bottom: 24px; color: #1e40af;
+}
+
+.existing-files {
+    background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 12px;
+    padding: 20px; margin: 24px 0;
+}
+
+.existing-files h3 {
+    margin: 0 0 16px 0; color: #374151; font-size: 1.1rem;
+}
+
+.file-section {
+    margin-bottom: 16px;
+}
+
+.file-section h4 {
+    margin: 0 0 8px 0; color: #6b7280; font-size: 0.9rem;
+    text-transform: uppercase; letter-spacing: 0.5px;
+}
+
+.file-list {
+    list-style: none; padding: 0; margin: 0;
+}
+
+.file-list li {
+    background: #e5e7eb; padding: 6px 12px; margin: 4px 0;
+    border-radius: 4px; color: #374151; font-size: 0.85rem;
+}
+
+.new-files {
+    border-top: 2px solid #e5e7eb; padding-top: 24px; margin-top: 24px;
+}
+
+.new-files h3 {
+    margin: 0 0 20px 0; color: #374151; font-size: 1.1rem;
+}
+
+.form-help {
+    color: #6b7280; font-size: 0.8rem; font-style: italic;
+}
+
+/* Overwrite option styles */
+.file-input-with-overwrite {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.file-input-with-overwrite input[type="file"] {
+    flex: 1;
+    min-width: 200px;
+}
+
+.overwrite-option {
+    padding: 8px 12px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    flex-shrink: 0;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    margin: 0;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #374151;
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+.checkbox-label input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+}
+
+.overwrite-disclaimer {
+    display: block;
+    margin-top: 8px;
+    color: #dc2626;
+    font-size: 0.8rem;
+    font-style: italic;
+    line-height: 1.4;
+}
+
+/* Existing toggle help styles */
+.toggle-help {
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: #fef3c7;
+    border: 1px solid #f59e0b;
+    border-radius: 6px;
+}
+
+.toggle-help input[type="checkbox"] {
+    margin: 0;
+}
+
+.toggle-help label {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #92400e;
+    text-transform: none;
+    letter-spacing: normal;
+    font-weight: 500;
+}

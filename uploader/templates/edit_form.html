@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% from "macros.html" import form_field, textarea_field, file_field %}
+
+{% block title %}Edit {{ experiment_name }} - Experiment Server{% endblock %}
+
+{% block page_title %}📝 Edit: {{ experiment_name }}{% endblock %}
+
+{% block navigation %}
+    <div class="navigation">
+        <a href="/" class="nav-link">Create New Experiment</a>
+        <a href="/edit" class="nav-link">Back to Experiment List</a>
+    </div>
+{% endblock %}
+
+{% block content %}
+    <div class="edit-info">
+        <p><strong>Note:</strong> Editing will update the experiment metadata and add any new files you upload. Existing files will be preserved.</p>
+    </div>
+    
+    <form action="/edit/{{ experiment_name }}" enctype="multipart/form-data" method="post">
+        {{ form_field("experiment_name", "Experiment Name (read-only)", value=experiment_name, readonly=true, help_text="Experiment name cannot be changed after creation") }}
+        
+        <div class="form-row">
+            {{ form_field("start_time", "Start Time", type="datetime-local", value=experiment.metadata.start_time[:16] if experiment.metadata.start_time else '') }}
+            {{ form_field("end_time", "End Time", type="datetime-local", value=experiment.metadata.end_time[:16] if experiment.metadata.end_time else '') }}
+        </div>
+        
+        <div class="form-row">
+            {{ form_field("cell_type", "Cell Type", value=experiment.metadata.cell_type or '') }}
+            {{ form_field("condition", "Condition", value=experiment.metadata.condition or '') }}
+        </div>
+        
+        <div class="form-row">
+            {{ form_field("condition_amount", "Condition Amount", type="number", value=experiment.metadata.condition_amount if experiment.metadata.condition_amount is not none else '', placeholder="e.g., 100") }}
+            {{ form_field("condition_unit", "Condition Unit", value=experiment.metadata.condition_unit or '', placeholder="e.g., μM, mg/mL") }}
+        </div>
+        
+        {{ form_field("condition_time", "Condition Time", type="datetime-local", value=experiment.metadata.condition_time[:16] if experiment.metadata.condition_time else '') }}
+        
+        {{ textarea_field("notes", "Notes", value=experiment.metadata.notes or '', placeholder="Additional experiment notes (optional)") }}
+        
+        <!-- Existing Files Display -->
+        {% if experiment.data_files or experiment.images %}
+            {% include "partials/existing_files.html" %}
+        {% endif %}
+        
+        <!-- File Upload Section -->
+        <div class="new-files">
+            <h3>� Update Files</h3>
+            <p class="info-text">Use the toggle to choose between adding new files or replacing existing ones.</p>
+            
+            {{ file_field("experiment_files", "Experiment Data", multiple=true, mode_toggle=true) }}
+            {{ file_field("ac_images", "AC Images", multiple=true, mode_toggle=true) }}
+            {{ file_field("dc_images", "DC Images", multiple=true, mode_toggle=true) }}
+            {{ file_field("seg_images", "Segmentation Images", multiple=true, mode_toggle=true) }}
+            {{ file_field("raw_images", "Raw Images", multiple=true, mode_toggle=true) }}
+        </div>
+
+        <input type="submit" value="💾 Update Experiment">
+    </form>
+    
+    <p class="info-text">Changes will update the experiment metadata and add any new files</p>
+{% endblock %}

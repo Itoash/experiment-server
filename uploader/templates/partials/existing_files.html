@@ -1,0 +1,35 @@
+<div class="existing-files">
+    <h3>📁 Existing Files</h3>
+    
+    {% if experiment.data_files %}
+        <div class="file-section">
+            <h4>Data Files ({{ experiment.data_files|length }})</h4>
+            <ul class="file-list">
+                {% for file in experiment.data_files %}
+                    <li>{{ file }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+    {% endif %}
+    
+    {% if experiment.images %}
+        {% set total_images = (experiment.images.ac|length) + (experiment.images.dc|length) + (experiment.images.segmentation|length) + (experiment.images.raw|length) %}
+        {% if total_images > 0 %}
+            <div class="file-section">
+                <h4>Images ({{ total_images }} total)</h4>
+                {% if experiment.images.ac %}
+                    <p><strong>AC:</strong> {{ experiment.images.ac|join(', ') }}</p>
+                {% endif %}
+                {% if experiment.images.dc %}
+                    <p><strong>DC:</strong> {{ experiment.images.dc|join(', ') }}</p>
+                {% endif %}
+                {% if experiment.images.segmentation %}
+                    <p><strong>Segmentation:</strong> {{ experiment.images.segmentation|join(', ') }}</p>
+                {% endif %}
+                {% if experiment.images.raw %}
+                    <p><strong>Raw:</strong> {{ experiment.images.raw|join(', ') }}</p>
+                {% endif %}
+            </div>
+        {% endif %}
+    {% endif %}
+</div>

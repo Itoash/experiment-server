@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{% block title %}Experiment Server{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <div class="container">
+        {% block header %}
+            <h2>{% block page_title %}🧪 Experiment Server{% endblock %}</h2>
+            
+            {% block navigation %}
+                <div class="navigation">
+                    <a href="/" class="nav-link {{ 'active' if request.url.path == '/' else '' }}">Create New Experiment</a>
+                    <a href="/edit" class="nav-link {{ 'active' if request.url.path.startswith('/edit') else '' }}">Edit Existing Experiment</a>
+                </div>
+            {% endblock %}
+        {% endblock %}
+        
+        {% block messages %}
+            {% if message %}
+                <div class="message {{ 'success' if success else 'error' }}">{{ message }}</div>
+            {% endif %}
+        {% endblock %}
+        
+        {% block content %}{% endblock %}
+    </div>
+    
+    {% block scripts %}
+        <script>
+            // Clear URL parameters after showing message
+            if (window.location.search) {
+                setTimeout(() => {
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                }, 3000);
+            }
+        </script>
+    {% endblock %}
+</body>
+</html>

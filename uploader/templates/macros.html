@@ -1,0 +1,126 @@
+<!-- Form field macro for text inputs -->
+{% macro form_field(name, label, type="text", value="", required=false, placeholder="", help_text="", readonly=false) %}
+<div class="form-group">
+    <label for="{{ name }}" class="{{ 'required' if required else '' }}">{{ label }}</label>
+    <input 
+        name="{{ name }}" 
+        id="{{ name }}" 
+        type="{{ type }}" 
+        value="{{ value }}"
+        {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
+        {% if required %}required{% endif %}
+        {% if readonly %}disabled{% endif %}
+        {% if type == "number" %}step="any" min="0"{% endif %}
+    >
+    {% if help_text %}
+        <small class="form-help">{{ help_text }}</small>
+    {% endif %}
+</div>
+{% endmacro %}
+
+<!-- Form field macro for textareas -->
+{% macro textarea_field(name, label, value="", required=false, placeholder="", rows=3) %}
+<div class="form-group">
+    <label for="{{ name }}" class="{{ 'required' if required else '' }}">{{ label }}</label>
+    <textarea 
+        name="{{ name }}" 
+        id="{{ name }}" 
+        rows="{{ rows }}"
+        {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
+        {% if required %}required{% endif %}
+    >{{ value }}</textarea>
+</div>
+{% endmacro %}
+
+<!-- Form field macro for file inputs -->
+{% macro file_field(name, label, required=false, multiple=false, help_text="", toggle=false, mode_toggle=false) %}
+<div class="form-group">
+    <label for="{{ name }}" class="{{ 'required' if required else '' }}">{{ label }}</label>
+    {% if mode_toggle %}
+        <div class="file-input-with-overwrite">
+            <input 
+                name="{{ name }}" 
+                id="{{ name }}" 
+                type="file" 
+                {% if multiple %}multiple{% endif %}
+                {% if required %}required{% endif %}
+            >
+            <div class="overwrite-option">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="{{ name }}_overwrite" name="{{ name }}_mode" value="replace">
+                    <span class="checkbox-text">Overwrite?</span>
+                </label>
+            </div>
+        </div>
+        <small class="overwrite-disclaimer">⚠️ Checking "Overwrite" will replace all existing files of this type. Leave unchecked to add to existing files.</small>
+    {% else %}
+        <input 
+            name="{{ name }}" 
+            id="{{ name }}" 
+            type="file" 
+            {% if multiple %}multiple{% endif %}
+            {% if required %}required{% endif %}
+        >
+    {% endif %}
+    {% if help_text %}
+        <small class="form-help">{{ help_text }}</small>
+    {% endif %}
+
+    {% if toggle %}
+        <div class="toggle-help">
+            <input type="checkbox" id="{{ name }}_toggle" onchange="document.getElementById('{{ name }}').disabled = !this.checked;">
+            <label for="{{ name }}_toggle">Enable file upload</label>
+        </div>
+        <script>
+            document.getElementById('{{ name }}').disabled = true;
+        </script>
+    {% endif %}
+</div>
+{% endmacro %}
+
+<!-- Form row macro for side-by-side fields -->
+{% macro form_row(content) %}
+<div class="form-row">
+    {{ content }}
+</div>
+{% endmacro %}
+
+<!-- Experiment card macro -->
+{% macro experiment_card(exp_name, exp_data) %}
+<div class="experiment-card">
+    <div class="experiment-header">
+        <h4>{{ exp_name }}</h4>
+        <span class="experiment-date">
+            {% if exp_data.start_time %}
+                {{ exp_data.start_time[:10] }}
+            {% endif %}
+        </span>
+    </div>
+    <div class="experiment-details">
+        <p><strong>Cell Type:</strong> {{ exp_data.cell_type or 'Not specified' }}</p>
+        {% if exp_data.condition %}
+            <p><strong>Condition:</strong> {{ exp_data.condition }}
+            {% if exp_data.condition_amount and exp_data.condition_unit %}
+                ({{ exp_data.condition_amount }} {{ exp_data.condition_unit }})
+            {% endif %}
+            </p>
+        {% endif %}
+        <p><strong>Files:</strong> 
+            {{ (exp_data.data_files|length) if exp_data.data_files else 0 }} data files,
+            {{ file_count(exp_data.images) }} images
+        </p>
+    </div>
+    <div class="experiment-actions">
+        <a href="/edit/{{ exp_name }}" class="btn btn-primary">Edit Experiment</a>
+    </div>
+</div>
+{% endmacro %}
+
+<!-- Helper macro to count total images -->
+{% macro file_count(images) %}
+    {% if images %}
+        {{ (images.ac|length) + (images.dc|length) + (images.segmentation|length) + (images.raw|length) }}
+    {% else %}
+        0
+    {% endif %}
+{% endmacro %}

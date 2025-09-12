@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% from "macros.html" import form_field, textarea_field, file_field %}
+
+{% block title %}Create New Experiment - Experiment Server{% endblock %}
+
+{% block page_title %}🧪 Experiment Upload{% endblock %}
+
+{% block content %}
+    <form action="/upload/" enctype="multipart/form-data" method="post">
+        {{ form_field("experiment_name", "Experiment Name", required=true, placeholder="e.g., 2024_09_05-CTRL") }}
+        
+        <div class="form-row">
+            {{ form_field("start_time", "Start Time", type="datetime-local", required=true) }}
+            {{ form_field("end_time", "End Time", type="datetime-local") }}
+        </div>
+        
+        <div class="form-row">
+            {{ form_field("cell_type", "Cell Type", required=true, placeholder="e.g., E.coli, HeLa") }}
+            {{ form_field("condition", "Condition", placeholder="e.g., CTRL, Treatment") }}
+        </div>
+        
+        <div class="form-row">
+            {{ form_field("condition_amount", "Condition Amount", type="number", placeholder="e.g., 100") }}
+            {{ form_field("condition_unit", "Condition Unit", placeholder="e.g., μM, mg/mL") }}
+        </div>
+        
+        {{ form_field("condition_time", "Condition Time", type="datetime-local") }}
+        
+        {{ textarea_field("notes", "Notes", placeholder="Additional experiment notes (optional)") }}
+        
+        {{ file_field("experiment_files", "Upload Experiment Data", required=true, multiple=true) }}
+        
+        {{ file_field("ac_images", "Upload AC images (Optional)", multiple=true) }}
+        
+        {{ file_field("dc_images", "Upload DC images (Optional)", multiple=true) }}
+        
+        {{ file_field("seg_images", "Upload segmentation images (Optional)", multiple=true) }}
+        
+        {{ file_field("raw_images", "Upload raw images (Optional)", multiple=true) }}
+
+        <input type="submit" value="🚀 Upload Experiment">
+    </form>
+    
+    <p class="info-text">Files will be processed and saved to the experiment database</p>
+{% endblock %}
+
+{% block scripts %}
+    {{ super() }}
+    <script>
+        // Dynamic required fields logic for condition-related inputs
+        const conditionInput = document.getElementById('condition');
+        const conditionAmount = document.getElementById('condition_amount');
+        const conditionUnit = document.getElementById('condition_unit');
+        const conditionTime = document.getElementById('condition_time');
+        const startTime = document.getElementById('start_time');
+        const endTime = document.getElementById('end_time');
+        
+        function updateConditionFields() {
+            const hasCondition = !['', 'None', 'N/A', 'NA', 'null', 'Null', 'NULL','CTRL'].includes(conditionInput.value.trim());
+            
+            conditionAmount.required = hasCondition;
+            conditionUnit.required = hasCondition;
+            conditionTime.required = hasCondition;
+            
+            // Update visual indicators
+            const amountLabel = document.querySelector('label[for="condition_amount"]');
+            const unitLabel = document.querySelector('label[for="condition_unit"]');
+            const timeLabel = document.querySelector('label[for="condition_time"]');
+            
+            if (hasCondition) {
+                amountLabel.classList.add('required');
+                unitLabel.classList.add('required');
+                timeLabel.classList.add('required');
+            } else {
+                amountLabel.classList.remove('required');
+                unitLabel.classList.remove('required');
+                timeLabel.classList.remove('required');
+            }
+        }
+        
+        function validateDates() {
+            const start = new Date(startTime.value);
+            const end = new Date(endTime.value);
+            const condition = new Date(conditionTime.value);
+            
+            // End time cannot be before start time
+            if (endTime.value && startTime.value && end < start) {
+                endTime.setCustomValidity('End time cannot be before start time');
+            } else {
+                endTime.setCustomValidity('');
+            }
+            
+            // Condition time must be between start and end time
+            if (conditionTime.value && startTime.value) {
+                if (condition < start) {
+                    conditionTime.setCustomValidity('Condition time cannot be before start time');
+                } else if (endTime.value && condition > end) {
+                    conditionTime.setCustomValidity('Condition time cannot be after end time');
+                } else {
+                    conditionTime.setCustomValidity('');
+                }
+            } else {
+                conditionTime.setCustomValidity('');
+            }
+        }
+        
+        conditionInput.addEventListener('input', updateConditionFields);
+        startTime.addEventListener('change', validateDates);
+        endTime.addEventListener('change', validateDates);
+        conditionTime.addEventListener('change', validateDates);
+        
+        updateConditionFields(); // Initialize on page load
+    </script>
+{% endblock %}

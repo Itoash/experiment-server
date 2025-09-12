@@ -69,7 +69,7 @@ services:
       DB_PASSWORD: biodinamica2025!
     volumes:
       - ./app:/usr/src/app
-      - ./test_experiments/images:/mnt/images  # shared image directory
+      - $IMAGES_PATH:/mnt/images  # shared image directory
     ports:
       - "8000:8000"
     networks:
@@ -95,8 +95,8 @@ services:
       IMAGE_PATH: /mnt/images/
     volumes:
       - ./app:/usr/src/app
-      - ./test_experiments/images:/mnt/images  # shared image directory
-      - ./test_experiments/data:/mnt/data        # shared data directory
+      - $IMAGES_PATH:/mnt/images  # shared image directory
+      - $DATA_PATH:/mnt/data        # shared data directory
     networks:
       - experiment_network
     depends_on:
@@ -104,6 +104,28 @@ services:
         condition: service_healthy
     command: ["python", "data_loader.py", "--data-dir", "/mnt/data", "--image-dir", "/mnt/images"]
 
+  uploader:
+      build:
+        context: ./uploader
+        dockerfile: Dockerfile
+      container_name: experiment_uploader
+      restart: unless-stopped
+      environment:
+        LOAD_QUEUE: /uploads
+        COMPLETED_PATH: /completed
+        DATA_PATH: /mnt/data
+        IMAGES_PATH: /mnt/images
+      volumes:
+        - ./uploader:/uploader
+        - $IMAGES_PATH:/mnt/images  # shared image directory
+        - $DATA_PATH:/mnt/data      # shared data directory
+        - $LOAD_QUEUE:/uploads
+        - $COMPLETED_PATH:/completed
+      ports:
+        - "8080:8080"
+      networks:
+        - experiment_network
+      
 volumes:
   postgres_data:
     driver: local

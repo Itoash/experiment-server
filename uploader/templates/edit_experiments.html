@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% from "macros.html" import experiment_card %}
+
+{% block title %}Edit Experiments - Experiment Server{% endblock %}
+
+{% block page_title %}📝 Edit Existing Experiments{% endblock %}
+
+{% block content %}
+    {% if experiments %}
+        <div class="experiment-list">
+            <h3>Select an experiment to edit:</h3>
+            {% for exp_name, exp_data in experiments.items() %}
+                {{ experiment_card(exp_name, exp_data) }}
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="no-experiments">
+            <p>No experiments found. <a href="/">Create your first experiment</a> to get started.</p>
+        </div>
+    {% endif %}
+{% endblock %}

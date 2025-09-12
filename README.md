@@ -27,6 +27,6 @@
 
 - Backbone of server
 - Gets updates from *dataloader*
-- Is queried by *App*. for data to visualise and image paths to retrieve
-- Is queried by *Uploader* to check for experiment existence beforehand
-- Is queried by *Dataloader* for loading data and daa existence
+- Is queried by *App*. for data to visualise and image paths to retrieve (read)
+- Is queried by *Uploader* to check for experiment existence beforehand (read)
+- Is queried by *Dataloader* for loading data and daa existence(read/write)

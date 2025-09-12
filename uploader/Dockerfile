@@ -16,8 +16,8 @@ ENV PYTHONDONTWRITEBYTECODE=1
 # the application crashes without emitting any logs due to buffering.
 ENV PYTHONUNBUFFERED=1
 
-WORKDIR /dataloader
-
+WORKDIR /uploader
+COPY . .
 # Create a non-privileged user that the app will run under.
 # See https://docs.docker.com/go/dockerfile-user-best-practices/
 # ARG UID=10001
@@ -34,13 +34,13 @@ WORKDIR /dataloader
 # Leverage a cache mount to /root/.cache/pip to speed up subsequent builds.
 # Leverage a bind mount to requirements.txt to avoid having to copy them into
 # into this layer.
-# RUN --mount=type=cache,target=/root/.cache/pip \
-#     --mount=type=bind,source=requirements.txt,target=requirements.txt \
-#     python -m pip install -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=bind,source=requirements.txt,target=requirements.txt \
+    python -m pip install -r requirements.txt
 
 # Switch to the non-privileged user to run the application.
+# RUN useradd -ms /bin/bash appuser
 # USER appuser
-
 # # Copy the source code into the container.
 # COPY . .
 
@@ -48,4 +48,4 @@ WORKDIR /dataloader
 # EXPOSE 8000
 
 # # Run the application.
-# CMD python app/__main__.py
+CMD ["uvicorn", "upload_site:app", "--host", "0.0.0.0", "--port", "8080"]

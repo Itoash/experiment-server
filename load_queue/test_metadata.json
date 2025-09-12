@@ -1,0 +1,27 @@
+{
+  "last_operation": "update",
+  "experiment_name": "test",
+  "start_time": "2025-09-12T15:07",
+  "end_time": "",
+  "cell_type": "lwskvda",
+  "condition": "",
+  "condition_amount": null,
+  "condition_unit": "",
+  "condition_time": "",
+  "notes": "wr\"sdpbfihknvzxc\r\n",
+  "original_timestamp": null,
+  "last_updated": "2025-09-12T12:28:17.574555Z",
+  "data_files": [
+    "test_cell_data_1.csv"
+  ],
+  "images": {
+    "ac": [
+      "AC.tif"
+    ],
+    "dc": [
+      "DC.tif"
+    ],
+    "segmentation": [],
+    "raw": []
+  }
+}
