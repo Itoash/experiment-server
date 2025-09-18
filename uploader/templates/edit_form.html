@@ -4,12 +4,13 @@
 
 {% block title %}Edit {{ experiment_name }} - Experiment Server{% endblock %}
 
-{% block page_title %}📝 Edit: {{ experiment_name }}{% endblock %}
+{% block page_title %}Edit: {{ experiment_name }}{% endblock %}
 
 {% block navigation %}
     <div class="navigation">
         <a href="/" class="nav-link">Create New Experiment</a>
         <a href="/edit" class="nav-link">Back to Experiment List</a>
+        <a href="/download" class="nav-link">Download Experiment</a>
     </div>
 {% endblock %}
 
@@ -60,7 +61,7 @@
         </div>
         <input type="hidden" id="websocket_upload_completed" value="false">
         <input type="hidden" id="raw_image_paths" name="raw_image_paths" value="">
-        <input type="submit" value="💾 Update Experiment", id="uploadButton">
+        <input type="submit" value=" Update Experiment", id="uploadButton">
     </form>
     
     <p class="info-text">Changes will update the experiment metadata and add any new files</p>
@@ -206,24 +207,6 @@
                 console.log('Form validation failed', invalidFields);
                 event.preventDefault();
                 invalidFields[0].focus();
-                return false;
-            }
-            
-            // Check WebSocket upload status
-            const websocketCompleted = document.getElementById('websocket_upload_completed').value === 'true';
-            const hasSelectedFiles = typeof selectedFiles !== 'undefined' && selectedFiles && selectedFiles.length > 0;
-            
-            console.log('WebSocket status:', {
-                completed: websocketCompleted,
-                hasFiles: hasSelectedFiles,
-                directoryUploadCompleted: typeof directoryUploadCompleted !== 'undefined' ? directoryUploadCompleted : false
-            });
-            
-            // If files were selected but WebSocket upload not completed, prevent submission
-            if (hasSelectedFiles && !websocketCompleted) {
-                console.log('WebSocket upload required but not completed');
-                event.preventDefault();
-                alert('Please complete the directory upload first by clicking "Start Directory Upload".');
                 return false;
             }
             

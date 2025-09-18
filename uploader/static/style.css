@@ -14,10 +14,11 @@ html, body {
 body { 
     font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif; 
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background-attachment: fixed; /* This makes the gradient fixed to the viewport */
     margin: 0; 
     padding: 20px; 
     min-height: 100vh;
-    -webkit-font-smoothing: antialiased; /* Better font rendering on Safari */
+    -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     line-height: 1.5;
 }

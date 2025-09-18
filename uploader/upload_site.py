@@ -1,14 +1,23 @@
 import os
 import logging
 import json
-
-
+import tempfile
+import shutil
+import base64
+import asyncio
+from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, Request, Form, WebSocket, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from typing import Dict, List, Optional
-from file_utils import  DATA_DIR, META_TEMPLATE, save_processed_images, save_raw_images, get_existing_experiments, save_metadata, save_data, delete_experiment, nuke_images
+from file_utils import  DATA_DIR, META_TEMPLATE,IMAGES_DIR, save_processed_images, get_existing_experiments, save_metadata, save_data, delete_experiment
+from urllib.parse import urlencode
+from db_operations import load_experiment_complete, update_experiment as update_experiment_db
+from websocket_handler import DirectoryUploadManager
+from threading import Lock
+from typing import Dict, List, Optional
+from file_utils import  DATA_DIR, META_TEMPLATE,IMAGES_DIR, save_processed_images, get_existing_experiments, save_metadata, save_data, delete_experiment
 from urllib.parse import urlencode
 from db_operations import load_experiment_complete, update_experiment as update_experiment_db
 from websocket_handler import DirectoryUploadManager
@@ -60,6 +69,8 @@ async def upload_files(
     dc_images: List[UploadFile] = File(default=[]),
     seg_images: List[UploadFile] = File(default=[]),
     raw_image_paths: Optional[str] = Form(None),  # JSON string with webkitRelativePath data
+    websocket_upload_id: Optional[str] = Form(None),
+    websocket_upload_completed: str = Form("false")
 ):
     if experiment_name not in experiment_locks:
         experiment_locks[experiment_name] = Lock()
@@ -68,6 +79,18 @@ async def upload_files(
         from datetime import datetime
         try:
 
+            # Handle WebSocket uploaded files first
+            raw_images_final_dir = None
+            if websocket_upload_id and websocket_upload_completed == "true":
+                # With the new direct-save approach, files are already in final location
+                # Just verify the upload session exists and get the directory
+                if websocket_upload_id in upload_manager.active_uploads:
+                    raw_images_final_dir = upload_manager.active_uploads[websocket_upload_id]["upload_dir"]
+                    logging.info(f"WebSocket upload completed, files saved to: {raw_images_final_dir}")
+                else:
+                    logging.warning(f"WebSocket upload {websocket_upload_id} not found in active uploads")
+                    raw_images_final_dir = None
+            
             # Get existing experiment metadata
             experiments = get_existing_experiments()
             if experiment_name  in experiments:
@@ -167,28 +190,25 @@ async def upload_files(
 
 @app.websocket("/ws/upload/{upload_id}")
 async def websocket_upload(websocket: WebSocket, upload_id: str, upload_name: str = None, overwrite: bool = False):
-    """WebSocket endpoint for handling directory uploads"""
     await websocket.accept()
     
-    # Get upload_name from query parameters if not provided
     if not upload_name:
-        upload_name = websocket.query_params.get('upload_name')
-    
-    # get overwrite from query parameters
-    overwrite_param = websocket.query_params.get('overwrite')
-    if overwrite_param is not None:
-        overwrite = overwrite_param.lower() in ['true', '1', 'yes']
-    
-    
-    if not upload_name:
-        await websocket.send_json({
-            "type": "error", 
-            "message": "Upload name is required"
-        })
+        await websocket.send_json({"type": "error", "message": "Upload name is required"})
         return
-    
-    await upload_manager.handle_upload(websocket, upload_id, upload_name, overwrite)
 
+    try:
+        # Use the DirectoryUploadManager's handle_upload method which saves directly to final location
+        await upload_manager.handle_upload(websocket, upload_id, upload_name, overwrite)
+        
+    except Exception as e:
+        logging.error(f"WebSocket upload error for {upload_id}: {e}")
+        # Cleanup on error
+        upload_manager.cleanup_upload(upload_id)
+        try:
+            await websocket.send_json({"type": "error", "message": str(e)})
+        except:
+            # WebSocket might be closed
+            pass
 @app.get("/edit", response_class=HTMLResponse)
 def edit_experiments_page(request: Request, message: Optional[str] = None, success: Optional[bool] = None):
     """Display page to select experiment for editing"""
@@ -309,10 +329,19 @@ async def update_experiment(
                 new_data_files = save_data(experiment_files[0], experiment_name, overwrite=(experiment_files_mode == "replace"))
             
             # Handle overwrites for images
-            nuke_images(exp_name=experiment_name, 
-                        ac=(ac_images_mode == "replace"),
-                        dc=(dc_images_mode == "replace"),
-                        seg=(seg_images_mode == "replace"))
+            if any([ac_images_mode == "replace", dc_images_mode == "replace", seg_images_mode == "replace"]):
+                exp_processed_dir = os.path.join(IMAGES_DIR, "processed", experiment_name)
+                if os.path.exists(exp_processed_dir):
+                    for file in os.listdir(exp_processed_dir):
+                        should_delete = (
+                            (ac_images_mode == "replace" and "ac" in file.lower()) or
+                            (dc_images_mode == "replace" and "dc" in file.lower()) or 
+                            (seg_images_mode == "replace" and "seg" in file.lower())
+                        )
+                        if should_delete:
+                            os.remove(os.path.join(exp_processed_dir, file))
+                            logging.info(f"Deleted {file} due to overwrite mode")
+            
             # Handle image files
             existing_images = existing_metadata.get("images", {})
             new_ac = save_processed_images(ac_images, "AC", experiment_name) if ac_images and ac_images[0].filename else []
@@ -409,4 +438,197 @@ async def delete_experiment_endpoint(experiment_name: str):
             detail=f"Failed to delete experiment: {str(e)}"
         )
 
+@app.get("/download", response_class=HTMLResponse)
+def download_experiments_page(request: Request, message: Optional[str] = None, success: Optional[bool] = None):
+    """Display page to select experiment for downloading"""
+    experiments = get_existing_experiments()
+    return templates.TemplateResponse(
+        "download_experiments.html",
+        {"request": request, "experiments": experiments, "message": message, "success": success}
+    )
+
+@app.get("/download/{experiment_name}")
+def download_experiment(experiment_name: str):
+    """Download an experiment as a ZIP file (data and processed images only, excluding raw images)"""
+    import tempfile
+    import shutil
+
+    # Get existing experiments to verify the experiment exists
+    experiments = get_existing_experiments()
     
+    if experiment_name not in experiments:
+        params = urlencode({"message": f"Experiment '{experiment_name}' not found", "success": "0"})
+        return RedirectResponse(url=f"/download?{params}", status_code=303)
+    
+    try:
+        # Create a temporary file that won't be automatically deleted
+        temp_dir = tempfile.mkdtemp()
+        zip_path = os.path.join(temp_dir, f"{experiment_name}_data.zip")
+        experiment_dir = Path(DATA_DIR) / experiment_name
+        processed_images_dir = Path(IMAGES_DIR)   / "processed" / experiment_name
+
+        # Create ZIP excluding raw images directory
+        import zipfile
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for root, dirs, files in os.walk(experiment_dir):
+                    
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, experiment_dir)
+                    zip_file.write(file_path, arcname)
+            # Add processed images
+            for root, dirs, files in os.walk(processed_images_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, processed_images_dir)
+                    zip_file.write(file_path, os.path.join("processed_images", arcname))
+
+        # Return FileResponse with cleanup callback
+        def cleanup():
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception as e:
+                logging.warning(f"Failed to cleanup temp directory {temp_dir}: {e}")
+        
+        return FileResponse(
+            path=zip_path,
+            filename=f"{experiment_name}_data.zip",
+            media_type='application/zip',
+            background=cleanup  # This will cleanup after the file is sent
+        )
+        
+    except Exception as e:
+        logging.error(f"Failed to create ZIP for experiment '{experiment_name}': {e}")
+        params = urlencode({"message": f"Failed to create ZIP: {str(e)}", "success": "0"})
+        return RedirectResponse(url=f"/download?{params}", status_code=303)
+
+
+@app.websocket("/ws/download/{experiment_name}")
+async def websocket_download(websocket: WebSocket, experiment_name: str):
+    """WebSocket endpoint for downloading large experiments with progress"""
+    await websocket.accept()
+    
+    async def safe_send_json(data):
+        """Safely send JSON data, handling disconnections"""
+        try:
+            await websocket.send_json(data)
+            return True
+        except Exception as e:
+            logging.warning(f"Failed to send WebSocket message: {e}")
+            return False
+    
+    async def safe_send_bytes(data):
+        """Safely send bytes data, handling disconnections"""
+        try:
+            await websocket.send_bytes(data)
+            return True
+        except Exception as e:
+            logging.warning(f"Failed to send WebSocket bytes: {e}")
+            return False
+    
+    try:
+        experiments = get_existing_experiments()
+        
+        if experiment_name not in experiments:
+            await safe_send_json({
+                "type": "error",
+                "message": f"Experiment '{experiment_name}' not found"
+            })
+            return
+        
+        # Get experiment directory
+        experiment_dir = Path(DATA_DIR) / experiment_name
+
+        # Only include raw images for websocket download
+        raw_images_dir = Path(IMAGES_DIR) / "raws" / experiment_name
+        
+        if not raw_images_dir.exists():
+            logging.warning(f"No raw images directory found for experiment '{experiment_name}' at {raw_images_dir}")
+            await safe_send_json({
+                "type": "error",
+                "message": "No raw images found for this experiment"
+            })
+            return
+        
+        # Calculate total size for progress (only raw images)
+        total_size = sum(f.stat().st_size for f in raw_images_dir.rglob('*') if f.is_file())
+        processed_size = 0
+        
+        # Send start message
+        if not await safe_send_json({
+            "type": "start",
+            "total_size": total_size,
+            "filename": f"{experiment_name}_raw_images.zip"
+        }):
+            return  # Client disconnected
+        
+        # Create ZIP in chunks and send progress
+        import tempfile
+        import zipfile
+        
+        with tempfile.NamedTemporaryFile(suffix='.zip', delete=False) as temp_file:
+            temp_path = temp_file.name
+            
+            try:
+                with zipfile.ZipFile(temp_path, 'w', zipfile.ZIP_DEFLATED, compresslevel=1) as zip_file:
+                    for file_path in raw_images_dir.rglob('*'):
+                        if file_path.is_file():
+                            arcname = file_path.relative_to(raw_images_dir)
+                            zip_file.write(file_path, arcname)
+                            
+                            processed_size += file_path.stat().st_size
+                            progress = (processed_size / total_size) * 100 if total_size > 0 else 100
+                            
+                            # Send progress update
+                            if not await safe_send_json({
+                                "type": "progress",
+                                "progress": progress,
+                                "current_file": str(arcname)
+                            }):
+                                logging.info(f"Client disconnected during ZIP creation for {experiment_name}")
+                                return  # Client disconnected, stop processing
+                            
+                            # Allow other tasks to run
+                            await asyncio.sleep(0.01)
+                
+                # Send the file in chunks
+                chunk_size = 1024 * 1024  # 1MB chunks
+                bytes_sent = 0
+                
+                with open(temp_path, 'rb') as f:
+                    while True:
+                        chunk = f.read(chunk_size)
+                        if not chunk:
+                            break
+                        
+                        # Send chunk
+                        if not await safe_send_bytes(chunk):
+                            logging.info(f"Client disconnected during file transfer for {experiment_name}")
+                            return  # Client disconnected, stop sending
+                        
+                        bytes_sent += len(chunk)
+                        await asyncio.sleep(0.01)  # Prevent overwhelming the connection
+                
+                # Send completion message
+                await safe_send_json({
+                    "type": "complete",
+                    "message": "Download completed successfully"
+                })
+                
+                logging.info(f"Successfully sent {bytes_sent} bytes for experiment {experiment_name}")
+                
+            finally:
+                # Clean up temp file
+                try:
+                    os.unlink(temp_path)
+                    logging.info(f"Cleaned up temp file: {temp_path}")
+                except Exception as e:
+                    logging.warning(f"Failed to cleanup temp file {temp_path}: {e}")
+                    
+    except Exception as e:
+        logging.error(f"Download failed for experiment '{experiment_name}': {e}")
+        # Try to send error message, but don't fail if websocket is closed
+        await safe_send_json({
+            "type": "error",
+            "message": f"Download failed: {str(e)}"
+        })

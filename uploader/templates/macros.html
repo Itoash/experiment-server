@@ -53,7 +53,7 @@
                 </label>
             </div>
         </div>
-        <small class="overwrite-disclaimer">⚠️ Checking "Overwrite" will replace all existing files of this type. Leave unchecked to add to existing files.</small>
+        <small class="overwrite-disclaimer">Checking "Overwrite" will replace all existing files of this type. Leave unchecked to add to existing files.</small>
     {% else %}
         <input 
             name="{{ name }}" 
@@ -88,7 +88,7 @@
 {% endmacro %}
 
 <!-- Experiment card macro -->
-{% macro experiment_card(exp_name, exp_data) %}
+{% macro experiment_card(exp_name, exp_data, download = False) %}
 <div class="experiment-card">
     <div class="experiment-header">
         <h4>{{ exp_name }}</h4>
@@ -113,8 +113,14 @@
         </p>
     </div>
     <div class="experiment-actions">
-        <a href="/edit/{{ exp_name }}" class="btn btn-primary">Edit Experiment</a>
-        <button onclick="confirmDeleteExperiment('{{ exp_name }}')" class="btn btn-danger">Delete</button>
+        
+        {% if download %}
+            <a href="/download/{{ exp_name }}" class="btn btn-primary">Download Data & Images</a>
+            <button onclick="downloadRawImages('{{ exp_name }}')" class="btn btn-secondary">Download Raw Images</button>
+        {% else %}
+            <a href="/edit/{{ exp_name }}" class="btn btn-primary">Edit Experiment</a>
+            <button onclick="confirmDeleteExperiment('{{ exp_name }}')" class="btn btn-danger">Delete</button>
+        {% endif %}
     </div>
 </div>
 {% endmacro %}

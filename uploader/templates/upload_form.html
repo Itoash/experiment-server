@@ -4,7 +4,7 @@
 
 {% block title %}Create New Experiment - Experiment Server{% endblock %}
 
-{% block page_title %}🧪 Experiment Upload{% endblock %}
+{% block page_title %}Experiment Upload{% endblock %}
 
 {% block content %}
     <form action="/upload" enctype="multipart/form-data" method="post" id="uploadForm" onsubmit="return handleSubmit(event)">
@@ -43,7 +43,7 @@
         <input type="hidden" id="raw_image_paths" name="raw_image_paths" value="">
         <input type="hidden" id="websocket_upload_completed" name="websocket_upload_completed" value="false">
         
-        <input type="submit" value="🚀 Upload Experiment" id="uploadButton">
+        <input type="submit" value="Upload Experiment" id="uploadButton">
     </form>
     
     <p class="info-text">Files will be processed and saved to the experiment database</p>
@@ -119,25 +119,19 @@
         }
 
         // Validation for image file inputs
-        function validateImageFiles(input, filter_string=null) {
+        function validateImageFiles(input, filter_string = null) {
             input.addEventListener('change', function() {
                 const files = Array.from(this.files);
-                const imageFiles = files.filter(file => {
+                const validFiles = files.filter(file => {
                     const ext = file.name.split('.').pop().toLowerCase();
-                    return ['tif', 'tiff', 'png', 'jpg', 'jpeg'].includes(ext);
+                    const isImage = ['tif', 'tiff', 'png', 'jpg', 'jpeg'].includes(ext);
+                    const hasFilter = !filter_string || file.name.toLowerCase().includes(filter_string.toLowerCase());
+                    return isImage && hasFilter;
                 });
-                const filteredfiles = imageFiles.filter(file => {
-                    if (!filter_string) return true;
-                    return file.name.toLowerCase().includes(filter_string.toLowerCase());
-                });
-                if (filteredfiles.length === 0) {
-                    alert('No valid image files selected. Please select files with extensions: TIF, PNG, JPG, and containing "' + (filter_string ? filter_string : 'AC/DC/SEG') + '" in the filename.');
-                    this.value = ''; // Clear the input
-                    return;
-                }
-                if (files.length > imageFiles.length) {
-                    const filteredCount = files.length - imageFiles.length;
-                    alert(`Note: ${filteredCount} non-image files will be excluded from upload. Only image files (TIF, PNG, JPG) will be uploaded.`);
+                
+                if (validFiles.length === 0 && files.length > 0) {
+                    alert(`Please select valid image files${filter_string ? ` containing "${filter_string}"` : ''}`);
+                    this.value = '';
                 }
             });
         }
@@ -188,24 +182,6 @@
                 console.log('Form validation failed', invalidFields);
                 event.preventDefault();
                 invalidFields[0].focus();
-                return false;
-            }
-            
-            // Check WebSocket upload status
-            const websocketCompleted = document.getElementById('websocket_upload_completed').value === 'true';
-            const hasSelectedFiles = selectedFiles && selectedFiles.length > 0;
-            
-            console.log('WebSocket status:', {
-                completed: websocketCompleted,
-                hasFiles: hasSelectedFiles,
-                directoryUploadCompleted: typeof directoryUploadCompleted !== 'undefined' ? directoryUploadCompleted : false
-            });
-            
-            // If files were selected but WebSocket upload not completed, prevent submission
-            if (hasSelectedFiles && !websocketCompleted) {
-                console.log('WebSocket upload required but not completed');
-                event.preventDefault();
-                alert('Please complete the directory upload first by clicking "Start Directory Upload".');
                 return false;
             }
             

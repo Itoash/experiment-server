@@ -344,26 +344,3 @@ def delete_experiment(experiment_name: str, data_dir: str = DATA_DIR, image_dir:
             logging.warning(f"Directory not found, cannot delete: {path}")
 
     remove_experiment_from_db(experiment_name)
-
-def nuke_images(exp_name:str, ac: bool, dc: bool, seg: bool, image_dir: str = IMAGES_DIR) -> None:
-    """Delete specific types of images across all experiments"""
-    base_dirs = {
-        "AC": os.path.join(image_dir, "processed", exp_name),
-        "DC": os.path.join(image_dir, "processed", exp_name),
-        "Segmentation": os.path.join(image_dir, "processed", exp_name)
-    }
-    
-    
-    
-    for img_type, base_dir in base_dirs.items():
-        if (img_type == "AC" and ac) or (img_type == "DC" and dc) or (img_type == "Segmentation" and seg):
-            if os.path.exists(base_dir):
-                # Delete only files matching the image type pattern
-                for file in os.listdir(base_dir):
-                    if (img_type == "AC" and "ac" in file.lower()) or \
-                       (img_type == "DC" and "dc" in file.lower()) or \
-                       (img_type == "Segmentation" and "seg" in file.lower()):
-                           os.remove(os.path.join(base_dir, file))
-                logging.info(f"Nuked {img_type} images in: {base_dir}")
-            else:
-                logging.warning(f"Processed images directory not found, cannot nuke {img_type}: {base_dir}")

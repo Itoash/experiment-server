@@ -1,9 +1,10 @@
 {% macro file_field_ws(name, label, help_text="", toggle=false, mode_toggle=false) %}
 <div class="form-group">
     <div class="form-section directory-upload-container">
-        <h2>📂 Directory Upload (WebSocket)</h2>
-        <h3>For Large Directory Structures (20GB+)</h3>
-        <p>This section uses WebSocket technology to handle large directory uploads while preserving the folder structure.</p>
+        <h2 style="text-align: center;">Upload Raw Images (Optional)</h2>
+        <h3 style="text-align: center;">Upload raw image directories with either single-image TIFF files or Andor Spool files. Timestamps will be inferred from directory names/Andor metadata.</h3>
+        
+        
         
         <div class="file-input-container" id="dropZone">
             <p>Click to select directories or drag and drop them here</p>
@@ -22,9 +23,7 @@
             <p id="progressText">Preparing upload...</p>
         </div>
         
-        <button type="button" id="startWebSocketUpload" class="upload-button" style="display: none;" onclick="startDirectoryUpload()">
-            Start Directory Upload
-        </button>
+
         
         <div id="statusMessages"></div>
         
@@ -40,7 +39,7 @@
                 <span class="checkbox-text">Overwrite?</span>
             </label>
         </div>
-        <small class="overwrite-disclaimer">⚠️ Checking "Overwrite" will replace all existing files of this type. Leave unchecked to add to existing files.</small>
+        <small class="overwrite-disclaimer">Checking "Overwrite" will replace all existing files of this type. Leave unchecked to add to existing files.</small>
         {% endif %}
     </div>
     
@@ -67,10 +66,18 @@
                                 status_messages_id="statusMessages", 
                                 directory_input_id="directoryInput") %}
 <script>
+// Global variables for WebSocket upload state - ensure they're properly initialized
 let selectedFiles = [];
 let websocket = null;
 let uploadId = null;
 let directoryUploadCompleted = false;
+
+// Debug logging function
+function debugLog(message, data = null) {
+    console.log(`[WebSocket Upload] ${message}`, data || '');
+}
+
+
 
 // Define protocol for WebSocket connection
 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -82,33 +89,41 @@ function generateUploadId() {
 
 // Handle directory selection (WebSocket upload only)
 document.getElementById('{{ directory_input_id }}').addEventListener('change', function(event) {
+    
+    
     selectedFiles = Array.from(event.target.files);
+    
     
     // Filter to only include image files
     const imageFiles = selectedFiles.filter(file => {
         const ext = file.name.split('.').pop().toLowerCase();
         return ['tif', 'tiff', 'png', 'jpg', 'jpeg'].includes(ext);
     });
+    
+    
     // filter files that are not included in a directory (those that do not have a relativepath )
     const dirFiles = imageFiles.filter(file => {
         return file.webkitRelativePath && file.webkitRelativePath !== file.name;
     });
+    
 
     if (dirFiles.length !== selectedFiles.length) {
         const filteredCount = selectedFiles.length - dirFiles.length;
         addStatusMessage(`Note: ${filteredCount} non-directory/non-image files will be excluded from upload. Only directory files will be uploaded.`, 'warning');
+        
     }
     
     selectedFiles = dirFiles;
+    
+    
+    // Reset upload completion flag when new files are selected
+    directoryUploadCompleted = false;
+    
+    
     displaySelectedFiles();
     
-    // Show/hide the start upload button
-    const startButton = document.getElementById('startWebSocketUpload');
-    if (selectedFiles.length > 0) {
-        startButton.style.display = 'block';
-    } else {
-        startButton.style.display = 'none';
-    }
+    // Store the raw image paths immediately when files are selected
+    storeRawImagePaths(selectedFiles);
 });
 
 // Display selected files for directory upload
@@ -160,103 +175,241 @@ function addStatusMessage(message, type = 'info') {
     }
 }
 
-// Start directory upload process (WebSocket)
-async function startDirectoryUpload() {
-    const uploadNameInput = document.getElementById('{{ experiment_name_input_id }}');
-    const uploadName = uploadNameInput ? uploadNameInput.value.trim() : '';
-    
-    if (!uploadName) {
-        addStatusMessage('Please enter an experiment name before uploading directories.', 'error');
-        uploadNameInput.focus();
-        return;
-    }
-    
-    if (selectedFiles.length === 0) {
-        addStatusMessage('Please select directories to upload.', 'error');
-        return;
-    }
-
-    // Get overwrite flag from the specific WebSocket upload checkbox
-    // Default to false if mode_toggle is not enabled or checkbox doesn't exist
-    const overwriteCheckbox = document.querySelector('input[data-websocket-overwrite="true"]');
-    const overwriteMode = overwriteCheckbox ? overwriteCheckbox.checked : false;
-    
-    console.log('WebSocket overwrite checkbox found:', !!overwriteCheckbox); // Debug log
-    console.log('WebSocket overwrite checkbox checked:', overwriteCheckbox ? overwriteCheckbox.checked : 'N/A'); // Debug log
-    console.log('WebSocket overwrite mode:', overwriteMode); // Debug log
-
-    // Show progress container and hide start button
-    document.getElementById('{{ progress_container_id }}').style.display = 'block';
-    document.getElementById('startWebSocketUpload').style.display = 'none';
-
-    uploadId = generateUploadId();
-    // Send the upload name and overwrite flag as query parameters
-    const wsUrl = `${protocol}//${window.location.host}{{ upload_endpoint }}/${uploadId}?upload_name=${encodeURIComponent(uploadName)}&overwrite=${overwriteMode}`;
-    
-    console.log('WebSocket URL:', wsUrl); // Debug log
-    
-    websocket = new WebSocket(wsUrl);
-    
-    websocket.onopen = function() {
-        addStatusMessage('Connected to server, starting directory upload...', 'info');
-    };
-    
-    websocket.onmessage = async function(event) {
-        const data = JSON.parse(event.data);
+// Start directory upload process
+function startDirectoryUpload() {
+    return new Promise((resolve, reject) => {
         
-        switch(data.type) {
-            case 'ready':
-                addStatusMessage('Server ready, uploading files...', 'info');
-                await uploadFiles();
-                break;
+        
+        const uploadNameInput = document.getElementById('experiment_name');
+        const uploadName = uploadNameInput ? uploadNameInput.value.trim() : '';
+    
+        
+        if (!uploadName) {
+            const error = new Error('No experiment name');
+            debugLog('Error: No experiment name');
+            addStatusMessage('Please enter an experiment name before uploading directories.', 'error');
+            reject(error);
+            return;
+        }
+        
+        if (selectedFiles.length === 0) {
+            const error = new Error('No files selected');
+            debugLog('Error: No files selected, selectedFiles.length:', selectedFiles.length);
+            addStatusMessage('Please select directories to upload.', 'error');
+            reject(error);
+            return;
+        }
+
+        debugLog('Starting WebSocket upload for', selectedFiles.length, 'files');
+
+        // Show progress container with enhanced visibility
+        const progressContainer = document.getElementById('progressContainer');
+        progressContainer.style.display = 'block';
+        progressContainer.style.border = '2px solid #007bff';
+        progressContainer.style.backgroundColor = '#f8f9fa';
+        progressContainer.style.padding = '15px';
+        progressContainer.style.borderRadius = '5px';
+        progressContainer.style.marginTop = '10px';
+
+        uploadId = generateUploadId();
+        
+        
+        // Store upload ID for form submission
+        let uploadIdInput = document.getElementById('websocket_upload_id');
+        if (!uploadIdInput) {
+            uploadIdInput = document.createElement('input');
+            uploadIdInput.type = 'hidden';
+            uploadIdInput.id = 'websocket_upload_id';
+            uploadIdInput.name = 'websocket_upload_id';
+            document.querySelector('form').appendChild(uploadIdInput);
+        }
+        uploadIdInput.value = uploadId;
+        
+        const overwriteCheckbox = document.querySelector('input[data-websocket-overwrite="true"]');
+        const overwriteMode = overwriteCheckbox ? overwriteCheckbox.checked : false;
+        
+        
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws/upload/${uploadId}?upload_name=${encodeURIComponent(uploadName)}&overwrite=${overwriteMode}`;
+        
+        // Close any existing WebSocket connection first
+        if (websocket) {
+            debugLog('Closing existing WebSocket connection');
+            websocket.close();
+            websocket = null;
+        }
+        
+        websocket = new WebSocket(wsUrl);
+        
+        // Store resolve/reject functions for use in other handlers
+        websocket._promiseResolve = resolve;
+        websocket._promiseReject = reject;
+        
+        websocket.onopen = function() {
+            addStatusMessage('Connected to server, starting directory upload...', 'info');
+        };
+        
+        websocket.onmessage = async function(event) {
+            const data = JSON.parse(event.data);
             
-            case 'progress':
-                updateProgress(data);
-                break;
+            switch(data.type) {
+                case 'ready':
+                    addStatusMessage('Server ready, uploading files...', 'info');
+                    await uploadFiles();
+                    break;
+                
+                case 'progress':
+                    updateProgressImmediate(data);
+                    break;
+                
+                case 'complete':
+                    handleUploadComplete(data);
+                    break;
+                
+                case 'error':
+                    debugLog('Server error received:', data.message);
+                    addStatusMessage(`Upload error: ${data.message}`, 'error');
+                    resetUpload();
+                    if (websocket._promiseReject) {
+                        websocket._promiseReject(new Error(data.message));
+                    }
+                    break;
+                    
+                default:
+                    debugLog('Unknown message type received:', data.type);
+                    break;
+            }
+        };
+        
+        websocket.onerror = function(error) {
+            debugLog('WebSocket error occurred:', error);
+            addStatusMessage('WebSocket connection error', 'error');
+            resetUpload();
+            if (websocket._promiseReject) {
+                websocket._promiseReject(new Error('WebSocket connection error'));
+            }
+        };
+        
+        websocket.onclose = function(event) {
+            debugLog('WebSocket connection closed:', event.code, event.reason);
+            debugLog('directoryUploadCompleted at close:', directoryUploadCompleted);
             
-            case 'complete':
-                handleUploadComplete(data);
-                break;
-            
-            case 'error':
-                addStatusMessage(data.message, 'error');
+            if (!directoryUploadCompleted && event.code !== 1000) {
+                debugLog('WebSocket closed unexpectedly, treating as error');
+                addStatusMessage('WebSocket connection closed unexpectedly', 'error');
                 resetUpload();
-                break;
-        }
-    };
-    
-    websocket.onerror = function(error) {
-        addStatusMessage('WebSocket error occurred', 'error');
-        resetUpload();
-    };
-    
-    websocket.onclose = function() {
-        if (!directoryUploadCompleted) {
-            addStatusMessage('WebSocket connection closed unexpectedly', 'error');
-        }
-    };
+                if (websocket._promiseReject) {
+                    websocket._promiseReject(new Error('WebSocket connection closed unexpectedly'));
+                }
+            } else {
+                debugLog('WebSocket closed normally or upload already completed');
+            }
+        };
+    });
 }
 
-// Upload files via WebSocket
+/// Upload files via WebSocket
 async function uploadFiles() {
+    debugLog('=== uploadFiles called ===');
+    debugLog('Files to upload:', selectedFiles.length);
+    
+    let uploadedCount = 0;
+    let totalSize = 0;
+    
     for (let i = 0; i < selectedFiles.length; i++) {
         const file = selectedFiles[i];
+        debugLog(`Preparing file ${i + 1}/${selectedFiles.length}:`, file.webkitRelativePath);
+        
+        try {
+            // Wait for server to be ready for next file
+            await sendFileAndWaitForAck(file, i + 1, selectedFiles.length);
+            
+            uploadedCount++;
+            totalSize += file.size;
+            
+            // Update progress immediately on client side
+            updateProgressImmediate(uploadedCount, selectedFiles.length, totalSize, file.name);
+            
+        } catch (error) {
+            debugLog(`Error uploading file ${file.name}:`, error.message);
+            addStatusMessage(`Error uploading ${file.name}: ${error.message}`, 'error');
+            throw error; // Stop upload on error
+        }
+    }
+    
+    // Send completion signal
+    debugLog('Sending completion signal');
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+        websocket.send(JSON.stringify({
+            type: 'complete'
+        }));
+        debugLog('Completion signal sent');
+    }
+}
+
+// New function to send file and wait for acknowledgment
+function sendFileAndWaitForAck(file, fileNumber, totalFiles) {
+    return new Promise(async (resolve, reject) => {
+        const timeout = setTimeout(() => {
+            reject(new Error(`Timeout waiting for acknowledgment of ${file.name}`));
+        }, 30000); // 30 second timeout per file
+        
+        // Set up one-time message handler for this file
+        const originalOnMessage = websocket.onmessage;
+        websocket.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            
+            if (data.type === 'file_received' || data.type === 'progress') {
+                clearTimeout(timeout);
+                websocket.onmessage = originalOnMessage; // Restore original handler
+                resolve(data);
+            } else {
+                // Pass other messages to original handler
+                originalOnMessage(event);
+            }
+        };
         
         try {
             const content = await fileToBase64(file);
-            websocket.send(JSON.stringify({
+            const message = {
                 type: 'file',
                 path: file.webkitRelativePath,
-                content: content.split(',')[1] // Remove data:mime;base64, prefix
-            }));
+                content: content.split(',')[1], // Remove data:mime;base64, prefix
+                file_number: fileNumber,
+                total_files: totalFiles
+            };
+            
+            if (websocket && websocket.readyState === WebSocket.OPEN) {
+                websocket.send(JSON.stringify(message));
+                debugLog(`Sent file ${fileNumber}: ${file.webkitRelativePath}`);
+            } else {
+                clearTimeout(timeout);
+                websocket.onmessage = originalOnMessage;
+                reject(new Error('WebSocket connection not available'));
+            }
         } catch (error) {
-            addStatusMessage(`Error uploading ${file.name}: ${error.message}`, 'error');
+            clearTimeout(timeout);
+            websocket.onmessage = originalOnMessage;
+            reject(error);
         }
-    }
+    });
+}
+
+// New function for immediate progress updates
+function updateProgressImmediate(filesUploaded, totalFiles, totalSize, currentFile) {
+    const progressFill = document.getElementById('progressFill');
+    const progressText = document.getElementById('progressText');
     
-    websocket.send(JSON.stringify({
-        type: 'complete'
-    }));
+    if (!progressFill || !progressText) return;
+    
+    const percentage = (filesUploaded / totalFiles) * 100;
+    progressFill.style.width = `${percentage}%`;
+    
+    progressText.textContent = 
+        `Uploaded ${filesUploaded} of ${totalFiles} files ` +
+        `(${formatFileSize(totalSize)}) - Current: ${currentFile}`;
+    
+    debugLog(`Progress: ${filesUploaded}/${totalFiles} (${percentage.toFixed(1)}%)`);
 }
 
 // Convert file to base64
@@ -269,57 +422,49 @@ function fileToBase64(file) {
     });
 }
 
-// Update progress display
-function updateProgress(data) {
-    const progressFill = document.getElementById('progressFill');
-    const progressText = document.getElementById('progressText');
-    
-    const percentage = (data.files_received / selectedFiles.length) * 100;
-    progressFill.style.width = `${percentage}%`;
-    
-    progressText.textContent = 
-        `Uploaded ${data.files_received} of ${selectedFiles.length} files ` +
-        `(${formatFileSize(data.total_size)}) - Current: ${data.current_file}`;
-}
 
 // Handle upload completion
 function handleUploadComplete(data) {
     directoryUploadCompleted = true;
     
-    // Mark WebSocket upload as completed
     document.getElementById('websocket_upload_completed').value = 'true';
-    
-    addStatusMessage(
-        `Directory upload completed! ${data.files_received} files uploaded ` +
-        `(${formatFileSize(data.total_size)}) to ${data.upload_dir}`, 
-        'success'
-    );
-    
-    // Store webkitRelativePath information
     storeRawImagePaths(selectedFiles);
     
-    // Reset upload state but keep the success message
-    resetUploadState();
+    addStatusMessage(`Upload completed! ${data.files_received} files (${formatFileSize(data.total_size)})`, 'success');
+    
+    const progressFill = document.getElementById('progressFill');
+    const progressText = document.getElementById('progressText');
+    if (progressFill) progressFill.style.width = '100%';
+    if (progressText) progressText.textContent = 'Upload completed!';
+    
+    if (websocket) {
+        if (websocket._promiseResolve) websocket._promiseResolve(data);
+        websocket.close(1000);
+        websocket = null;
+    }
 }
 
 // Reset upload state
-function resetUploadState() {
-    document.getElementById('{{ progress_container_id }}').style.display = 'none';
-    document.getElementById('startWebSocketUpload').style.display = 'none';
+function resetUpload() {
+    const progressContainer = document.getElementById('progressContainer');
+    progressContainer.style.display = 'none';
+    // Reset enhanced styling
+    progressContainer.style.border = '';
+    progressContainer.style.backgroundColor = '';
+    progressContainer.style.padding = '';
+    progressContainer.style.borderRadius = '';
+    progressContainer.style.marginTop = '';
+    
+    // Reset completion flags
+    const completedInput = document.getElementById('websocket_upload_completed');
+    if (completedInput) completedInput.value = 'false';
+    
+    directoryUploadCompleted = false;
     
     if (websocket) {
         websocket.close();
         websocket = null;
     }
-}
-
-// Reset upload (for errors)
-function resetUpload() {
-    resetUploadState();
-    document.getElementById('startWebSocketUpload').style.display = selectedFiles.length > 0 ? 'block' : 'none';
-    directoryUploadCompleted = false;
-    // Reset completion flag
-    document.getElementById('websocket_upload_completed').value = 'false';
 }
 
 // Store webkitRelativePath information for each file
@@ -348,85 +493,143 @@ function storeRawImagePaths(files) {
     }
 }
 
-//
+// Store reference to original handleSubmit - this must be done AFTER the original is defined
+let originalHandleSubmit = null;
 
-// Enhanced drag and drop for regular file inputs
-document.querySelectorAll('.file-input-container').forEach(container => {
-    const input = container.querySelector('input[type="file"]');
+// Function to capture the original handleSubmit once it's available
+function captureOriginalHandleSubmit() {
+    if (window.handleSubmit && window.handleSubmit !== customFormSubmissionHandler) {
+        originalHandleSubmit = window.handleSubmit;
+        debugLog('Captured original handleSubmit function');
+        return true;
+    }
+    return false;
+}
+
+// Custom form submission handler function
+async function customFormSubmissionHandler(event) {
     
-    if (input && input.id !== '{{ directory_input_id }}') {
-        container.addEventListener('dragover', function(e) {
-            e.preventDefault();
-            container.classList.add('dragover');
-        });
+    
+    // First, try to capture the original handleSubmit if we haven't already
+    if (!originalHandleSubmit) {
+        captureOriginalHandleSubmit();
+    }
+    
+    // Check if we have directory files to upload
+    const hasDirectoryFiles = selectedFiles && selectedFiles.length > 0;
+    debugLog('hasDirectoryFiles:', hasDirectoryFiles);
+    debugLog('WebSocket upload condition:', hasDirectoryFiles && !directoryUploadCompleted);
+    
+    if (hasDirectoryFiles && !directoryUploadCompleted) {
+        debugLog('=== Starting WebSocket upload process ===');
         
-        container.addEventListener('dragleave', function(e) {
-            e.preventDefault();
-            container.classList.remove('dragover');
-        });
-        
-        container.addEventListener('drop', function(e) {
-            e.preventDefault();
-            container.classList.remove('dragover');
+        // First run the original validation if it exists
+        if (originalHandleSubmit) {
+            debugLog('Running original form validation first...');
+            const validationResult = originalHandleSubmit.call(event.target, event);
+            debugLog('Original validation result:', validationResult);
             
-            if (e.dataTransfer.files.length > 0) {
-                input.files = e.dataTransfer.files;
-                
-                // Trigger change event
-                const event = new Event('change', { bubbles: true });
-                input.dispatchEvent(event);
+            if (validationResult === false) {
+                debugLog('Form validation failed, aborting WebSocket upload');
+                return false;
             }
-        });
-    }
-});
-
-// Directory upload drag and drop (special handling)
-const directoryDropZone = document.getElementById('dropZone');
-if (directoryDropZone) {
-    directoryDropZone.addEventListener('dragover', function(e) {
-        e.preventDefault();
-        directoryDropZone.classList.add('dragover');
-    });
-    
-    directoryDropZone.addEventListener('dragleave', function(e) {
-        e.preventDefault();
-        directoryDropZone.classList.remove('dragover');
-    });
-    
-    directoryDropZone.addEventListener('drop', function(e) {
-        e.preventDefault();
-        directoryDropZone.classList.remove('dragover');
+        }
         
-        // Note: Drag and drop doesn't support webkitdirectory
-        addStatusMessage('Please use the "Select Directories" button to choose directories.', 'info');
-    });
-}
-
-// Modify the main form submission to check if WebSocket upload is needed
-function checkWebSocketUploadBeforeSubmit() {
-    const hasFiles = selectedFiles && selectedFiles.length > 0;
-    const isCompleted = document.getElementById('websocket_upload_completed').value === 'true';
-    
-    if (hasFiles && !isCompleted) {
-        addStatusMessage('Please complete the directory upload first by clicking "Start Directory Upload".', 'warning');
-        return false;
-    }
-    return true;
-}
-
-// Override the main form submit handler
-const originalHandleSubmit = window.handleSubmit;
-window.handleSubmit = function(event) {
-    if (!checkWebSocketUploadBeforeSubmit()) {
+        // Prevent normal form submission and start WebSocket upload first
         event.preventDefault();
-        return false;
+        event.stopPropagation();
+        
+        // Disable the submit button to prevent multiple submissions
+        const submitButton = document.getElementById('uploadButton');
+        if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.value = 'Uploading directories...';
+            debugLog('Submit button disabled and text updated');
+        }
+        
+        addStatusMessage('Starting directory upload, please wait...', 'info');
+        
+        try {
+            debugLog('Calling startDirectoryUpload()...');
+            await startDirectoryUpload();
+            // After successful upload, submit the form normally
+            debugLog('WebSocket upload completed successfully');
+            addStatusMessage('Directory upload completed successfully!', 'success');
+            
+            // Re-enable submit button and change text
+            if (submitButton) {
+                submitButton.value = 'Submitting experiment...';
+                debugLog('Submit button text updated to: Submitting experiment...');
+            }
+            
+            // Wait a moment for user to see the success message, then submit
+            setTimeout(() => {
+                debugLog('Proceeding with normal form submission after WebSocket upload');
+                
+                // Submit the form directly, bypassing any submit handlers
+                const form = event.target;
+                debugLog('Submitting form directly to:', form.action);
+                form.submit();
+                
+            }, 1500);
+            
+        } catch (error) {
+            debugLog('WebSocket upload failed:', error.message);
+            addStatusMessage(`Upload failed: ${error.message}`, 'error');
+            
+            // Re-enable submit button on error
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.value = 'Upload Experiment';
+                debugLog('Submit button re-enabled after error');
+            }
+            return false;
+        }
+        
+        return false; // Prevent immediate form submission
     }
+    
+    // No directory files or already uploaded, proceed with original validation and submission
+    debugLog('=== Proceeding with normal form submission ===');
+    debugLog('Reason: hasDirectoryFiles =', hasDirectoryFiles, ', directoryUploadCompleted =', directoryUploadCompleted);
     
     if (originalHandleSubmit) {
-        return originalHandleSubmit(event);
+        debugLog('Calling original handleSubmit function for normal submission');
+        return originalHandleSubmit.call(event.target, event);
     }
     
+    debugLog('No original handleSubmit, allowing normal submission');
     return true;
-};
+}
+
+
+// Set up the override - this must happen after DOM is loaded to ensure we capture the right function
+document.addEventListener('DOMContentLoaded', function() {
+    debugLog('DOM loaded, setting up form submission override');
+    
+    // Try to capture the original handleSubmit
+    setTimeout(() => {
+        if (captureOriginalHandleSubmit()) {
+            debugLog('Setting up form submission override with captured original');
+            window.handleSubmit = customFormSubmissionHandler;
+        } else {
+            debugLog('Could not capture original handleSubmit, setting up override anyway');
+            window.handleSubmit = customFormSubmissionHandler;
+        }
+        
+        // Also add direct event listener as backup
+        const form = document.querySelector('form');
+        if (form) {
+            debugLog('Found form element, adding direct submit event listener as backup');
+            form.addEventListener('submit', function(event) {
+                debugLog('Direct form submit event triggered');
+                // Only call our handler if the form doesn't already handle it
+                if (!event.defaultPrevented) {
+                    return customFormSubmissionHandler(event);
+                }
+            });
+        }
+    }, 100); // Small delay to ensure other scripts have loaded
+});
 </script>
 {% endmacro %}

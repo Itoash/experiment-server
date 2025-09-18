@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% from "macros.html" import experiment_card %}
+
+{% block title %}Download Experiments - Experiment Server{% endblock %}
+
+{% block page_title %}Download Experiments{% endblock %}
+
+{% block content %}
+    {% if experiments %}
+        <div class="experiment-list">
+            <h3>Select an experiment to download:</h3>
+            {% for exp_name, exp_data in experiments.items() %}
+                {{ experiment_card(exp_name, exp_data, download=true) }}
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="no-experiments">
+            <p>No experiments found. <a href="/">Create your first experiment</a> to get started.</p>
+        </div>
+    {% endif %}
+
+    <!-- Download progress modal -->
+    <div id="downloadModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h4>Downloading Raw Images</h4>
+            <div class="progress-container">
+                <div class="progress-bar">
+                    <div id="downloadProgress" class="progress-fill"></div>
+                </div>
+                <span id="downloadPercentage">0%</span>
+            </div>
+            <p id="downloadStatus">Preparing download...</p>
+            <p id="currentFile"></p>
+            <button onclick="cancelDownload()" class="btn btn-danger">Cancel</button>
+        </div>
+    </div>
+
+    <script>
+        let downloadWebSocket = null;
+        let downloadedChunks = [];
+
+        function downloadRawImages(experimentName) {
+            // Show modal
+            document.getElementById('downloadModal').style.display = 'block';
+            
+            // Reset progress
+            document.getElementById('downloadProgress').style.width = '0%';
+            document.getElementById('downloadPercentage').textContent = '0%';
+            document.getElementById('downloadStatus').textContent = 'Connecting...';
+            document.getElementById('currentFile').textContent = '';
+            downloadedChunks = [];
+            
+            // Connect to WebSocket
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws/download/${experimentName}`;
+            
+            downloadWebSocket = new WebSocket(wsUrl);
+            
+            downloadWebSocket.onopen = function() {
+                document.getElementById('downloadStatus').textContent = 'Connected. Starting download...';
+            };
+            
+            downloadWebSocket.onmessage = function(event) {
+                if (event.data instanceof Blob) {
+                    // Binary data - part of the ZIP file
+                    downloadedChunks.push(event.data);
+                } else {
+                    // JSON message
+                    const data = JSON.parse(event.data);
+                    
+                    switch(data.type) {
+                        case 'start':
+                            document.getElementById('downloadStatus').textContent = 
+                                `Preparing ${data.filename} (${formatBytes(data.total_size)})...`;
+                            break;
+                            
+                        case 'progress':
+                            const percentage = Math.round(data.progress);
+                            document.getElementById('downloadProgress').style.width = percentage + '%';
+                            document.getElementById('downloadPercentage').textContent = percentage + '%';
+                            document.getElementById('currentFile').textContent = 
+                                `Processing: ${data.current_file}`;
+                            break;
+                            
+                        case 'complete':
+                            document.getElementById('downloadStatus').textContent = 'Download complete! Saving file...';
+                            saveDownloadedFile(experimentName + '_raw_images.zip');
+                            break;
+                            
+                        case 'error':
+                            document.getElementById('downloadStatus').textContent = 'Error: ' + data.message;
+                            console.error('Download error:', data.message);
+                            break;
+                    }
+                }
+            };
+            
+            downloadWebSocket.onerror = function(error) {
+                document.getElementById('downloadStatus').textContent = 'Connection error occurred';
+                console.error('WebSocket error:', error);
+            };
+            
+            downloadWebSocket.onclose = function() {
+                if (downloadedChunks.length === 0) {
+                    document.getElementById('downloadStatus').textContent = 'Connection closed';
+                }
+            };
+        }
+
+        function saveDownloadedFile(filename) {
+            try {
+                // Create blob from chunks
+                const blob = new Blob(downloadedChunks, { type: 'application/zip' });
+                
+                // Create download link
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                
+                // Cleanup
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                
+                document.getElementById('downloadStatus').textContent = 'File saved successfully!';
+                
+                // Close modal after 2 seconds
+                setTimeout(() => {
+                    closeDownloadModal();
+                }, 2000);
+                
+            } catch (error) {
+                document.getElementById('downloadStatus').textContent = 'Error saving file: ' + error.message;
+                console.error('Save error:', error);
+            }
+        }
+
+        function cancelDownload() {
+            if (downloadWebSocket) {
+                downloadWebSocket.close();
+                downloadWebSocket = null;
+            }
+            downloadedChunks = [];
+            closeDownloadModal();
+        }
+
+        function closeDownloadModal() {
+            document.getElementById('downloadModal').style.display = 'none';
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('downloadModal');
+            if (event.target === modal) {
+                cancelDownload();
+            }
+        }
+    </script>
+
+    <style>
+        .modal {
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+
+        .modal-content {
+            background-color: white;
+            margin: 15% auto;
+            padding: 20px;
+            border-radius: 8px;
+            width: 80%;
+            max-width: 500px;
+            text-align: center;
+        }
+
+        .progress-container {
+            margin: 20px 0;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #f0f0f0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50, #45a049);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        #downloadStatus, #currentFile {
+            margin: 10px 0;
+            font-size: 14px;
+            color: #666;
+        }
+
+        #currentFile {
+            font-family: monospace;
+            word-break: break-all;
+        }
+    </style>
+{% endblock %}
