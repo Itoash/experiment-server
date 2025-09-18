@@ -3,16 +3,16 @@
 -- Experiments table
 CREATE TABLE IF NOT EXISTS experiments (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
+    name VARCHAR(255) NOT NULL UNIQUE,
     start_time TIMESTAMPTZ NOT NULL,
     end_time TIMESTAMPTZ,
     cell_type VARCHAR(255),
     condition VARCHAR(255),
     condition_amount NUMERIC,
     condition_unit VARCHAR(50),
-    condition_time INTERVAL,
+    condition_time TIMESTAMPTZ, -- time when condition was applied
     notes TEXT,
-    metadata JSONB,
+    meta JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

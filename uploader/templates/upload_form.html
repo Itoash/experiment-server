@@ -1,12 +1,13 @@
 {% extends "base.html" %}
 {% from "macros.html" import form_field, textarea_field, file_field %}
+{% from "websocket_uploader.html" import file_field_ws, websocket_upload_script %}
 
 {% block title %}Create New Experiment - Experiment Server{% endblock %}
 
 {% block page_title %}🧪 Experiment Upload{% endblock %}
 
 {% block content %}
-    <form action="/upload/" enctype="multipart/form-data" method="post">
+    <form action="/upload" enctype="multipart/form-data" method="post" id="uploadForm" onsubmit="return handleSubmit(event)">
         {{ form_field("experiment_name", "Experiment Name", required=true, placeholder="e.g., 2024_09_05-CTRL") }}
         
         <div class="form-row">
@@ -36,9 +37,13 @@
         
         {{ file_field("seg_images", "Upload segmentation images (Optional)", multiple=true) }}
         
-        {{ file_field("raw_images", "Upload raw images (Optional)", multiple=true) }}
-
-        <input type="submit" value="🚀 Upload Experiment">
+        {{ file_field_ws("raw_images", "Upload raw images (Optional)", help_text="Select folders containing raw images (TIF, PNG, JPG). Only folders with image files will be included, and directory structure will be preserved.") }}
+        
+        <!-- Hidden input for WebSocket upload paths -->
+        <input type="hidden" id="raw_image_paths" name="raw_image_paths" value="">
+        <input type="hidden" id="websocket_upload_completed" name="websocket_upload_completed" value="false">
+        
+        <input type="submit" value="🚀 Upload Experiment" id="uploadButton">
     </form>
     
     <p class="info-text">Files will be processed and saved to the experiment database</p>
@@ -46,6 +51,12 @@
 
 {% block scripts %}
     {{ super() }}
+    {{ websocket_upload_script(upload_endpoint="/ws/upload",
+                               upload_button_id="uploadButton",
+                               progress_container_id="progressContainer",
+                               status_messages_id="statusMessages",
+                               directory_input_id="directoryInput",
+                               experiment_name_input_id="experiment_name") }}
     <script>
         // Dynamic required fields logic for condition-related inputs
         const conditionInput = document.getElementById('condition');
@@ -54,7 +65,10 @@
         const conditionTime = document.getElementById('condition_time');
         const startTime = document.getElementById('start_time');
         const endTime = document.getElementById('end_time');
-        
+        const ACImagesInput = document.getElementById('ac_images');
+        const DCImagesInput = document.getElementById('dc_images');
+        const segImagesInput = document.getElementById('seg_images');
+
         function updateConditionFields() {
             const hasCondition = !['', 'None', 'N/A', 'NA', 'null', 'Null', 'NULL','CTRL'].includes(conditionInput.value.trim());
             
@@ -103,12 +117,109 @@
                 conditionTime.setCustomValidity('');
             }
         }
+
+        // Validation for image file inputs
+        function validateImageFiles(input, filter_string=null) {
+            input.addEventListener('change', function() {
+                const files = Array.from(this.files);
+                const imageFiles = files.filter(file => {
+                    const ext = file.name.split('.').pop().toLowerCase();
+                    return ['tif', 'tiff', 'png', 'jpg', 'jpeg'].includes(ext);
+                });
+                const filteredfiles = imageFiles.filter(file => {
+                    if (!filter_string) return true;
+                    return file.name.toLowerCase().includes(filter_string.toLowerCase());
+                });
+                if (filteredfiles.length === 0) {
+                    alert('No valid image files selected. Please select files with extensions: TIF, PNG, JPG, and containing "' + (filter_string ? filter_string : 'AC/DC/SEG') + '" in the filename.');
+                    this.value = ''; // Clear the input
+                    return;
+                }
+                if (files.length > imageFiles.length) {
+                    const filteredCount = files.length - imageFiles.length;
+                    alert(`Note: ${filteredCount} non-image files will be excluded from upload. Only image files (TIF, PNG, JPG) will be uploaded.`);
+                }
+            });
+        }
         
+        // Apply validation to all image inputs
+        validateImageFiles(ACImagesInput, 'ac');
+        validateImageFiles(DCImagesInput,'dc');
+        validateImageFiles(segImagesInput,'seg');
+        
+        // Test WebSocket connection function
+        function testWebSocketConnection() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const testId = 'test_' + Math.random().toString(36).substr(2, 9);
+            const testUrl = `${protocol}//${window.location.host}/ws/upload/${testId}?upload_name=test`;
+            
+            console.log('Testing WebSocket connection to:', testUrl);
+            
+            const testSocket = new WebSocket(testUrl);
+            
+            testSocket.onopen = function() {
+                console.log('✅ WebSocket test connection successful');
+                testSocket.close();
+            };
+            
+            testSocket.onerror = function(error) {
+                console.error('❌ WebSocket test connection failed:', error);
+            };
+            
+            testSocket.onclose = function(event) {
+                console.log('WebSocket test connection closed:', event.code, event.reason);
+            };
+        }
+
+        // Call this on page load to test connectivity
+        document.addEventListener('DOMContentLoaded', function() {
+            testWebSocketConnection();
+        });
+        function handleSubmit(event) {
+            console.log('Form submission started');
+            
+            // Validate all fields first
+            validateDates();
+            updateConditionFields();
+            
+            // Check if any fields have validation errors
+            const invalidFields = document.getElementById('uploadForm').querySelectorAll(':invalid');
+            if (invalidFields.length > 0) {
+                console.log('Form validation failed', invalidFields);
+                event.preventDefault();
+                invalidFields[0].focus();
+                return false;
+            }
+            
+            // Check WebSocket upload status
+            const websocketCompleted = document.getElementById('websocket_upload_completed').value === 'true';
+            const hasSelectedFiles = selectedFiles && selectedFiles.length > 0;
+            
+            console.log('WebSocket status:', {
+                completed: websocketCompleted,
+                hasFiles: hasSelectedFiles,
+                directoryUploadCompleted: typeof directoryUploadCompleted !== 'undefined' ? directoryUploadCompleted : false
+            });
+            
+            // If files were selected but WebSocket upload not completed, prevent submission
+            if (hasSelectedFiles && !websocketCompleted) {
+                console.log('WebSocket upload required but not completed');
+                event.preventDefault();
+                alert('Please complete the directory upload first by clicking "Start Directory Upload".');
+                return false;
+            }
+            
+            console.log('Form validation passed, submitting');
+            return true;
+        }
+
+        // Event listeners
         conditionInput.addEventListener('input', updateConditionFields);
         startTime.addEventListener('change', validateDates);
         endTime.addEventListener('change', validateDates);
         conditionTime.addEventListener('change', validateDates);
         
-        updateConditionFields(); // Initialize on page load
+        // Initialize on page load
+        updateConditionFields();
     </script>
 {% endblock %}

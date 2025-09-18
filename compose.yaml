@@ -91,18 +91,22 @@ services:
       DB_NAME: experiment_db
       DB_USER: researcher
       DB_PASSWORD: biodinamica2025!
-      DATASET_PATH: /mnt/data/
-      IMAGE_PATH: /mnt/images/
+      DATA_PATH: /mnt/data/
+      IMAGES_PATH: /mnt/images/
+      LOAD_QUEUE: /uploads
+      TEST_DATA_PATH: /test_data/
     volumes:
       - ./app:/usr/src/app
       - $IMAGES_PATH:/mnt/images  # shared image directory
       - $DATA_PATH:/mnt/data        # shared data directory
+      - $LOAD_QUEUE:/uploads
+      - $TEST_DATA_PATH:/test_data
     networks:
       - experiment_network
     depends_on:
       db:
         condition: service_healthy
-    command: ["python", "data_loader.py", "--data-dir", "/mnt/data", "--image-dir", "/mnt/images"]
+    command: ["python", "__main__.py"]
 
   uploader:
       build:
@@ -111,8 +115,12 @@ services:
       container_name: experiment_uploader
       restart: unless-stopped
       environment:
+        DB_HOST: db
+        DB_PORT: 5432
+        DB_NAME: experiment_db
+        DB_USER: researcher
+        DB_PASSWORD: biodinamica2025!
         LOAD_QUEUE: /uploads
-        COMPLETED_PATH: /completed
         DATA_PATH: /mnt/data
         IMAGES_PATH: /mnt/images
       volumes:
@@ -120,11 +128,13 @@ services:
         - $IMAGES_PATH:/mnt/images  # shared image directory
         - $DATA_PATH:/mnt/data      # shared data directory
         - $LOAD_QUEUE:/uploads
-        - $COMPLETED_PATH:/completed
       ports:
         - "8080:8080"
       networks:
         - experiment_network
+      depends_on:
+        db:
+          condition: service_healthy
       
 volumes:
   postgres_data:

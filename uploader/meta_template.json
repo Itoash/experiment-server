@@ -1,0 +1,20 @@
+{
+  "last_operation": null,
+  "experiment_name": null,
+  "start_time": null,
+  "end_time": null,
+  "cell_type": null,
+  "condition": null,
+  "condition_amount": null,
+  "condition_unit": null,
+  "condition_time": null,
+  "notes": null,
+  "original_timestamp": null,
+  "last_updated": null,
+  "images": {
+    "ac": [],
+    "dc": [],
+    "segmentation": [],
+    "raw": []
+  }
+}

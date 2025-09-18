@@ -1,0 +1,135 @@
+Name : Protocol1	04/11/2024	4:21:46 PM	
+
+Type : 14 bit grey/pseudo
+Intensity : 1.000000 lux
+x : 308 * 1.000000 : um
+y : 342 * 1.000000 : um
+Time : 400
+
+
+[Environment]
+User=ZEISS
+Configuration=test2023
+[Environment End]
+[Created]
+Date=04/11/2024
+Time=4:20:59 PM
+[Created End]
+[Protocol Description]
+Protocol - Protocol1
+	Image - Protocol1
+		Camera Binning - Use Current
+		Wait Allocation - Off
+		Camera Selection - Use Current
+		Events
+			Keyboard Events - Off
+		Repeat T - 400 times (0 ms - fastest)
+			Snap - Frame
+		End - T
+
+[Protocol Description End]
+[XYZScan]
+ScanName=
+FileVersion=2
+Centre=False
+Channel=
+WellPattern=
+Density=0
+Calibration=
+XYFields=
+ZScan=
+Montage=
+Plates=
+MontageOffsets=
+MF Scan Present=False
+[XYZScan End]
+[Image Bits]
+14 Bit Data=TRUE
+[Image Bits End]
+[Grab Parameters]
+Camera=Andor
+Window Left=260
+Window Top=266
+Window Right=307
+Window Bottom=341
+Window Width=308
+Window Height=342
+BinningX=1
+BinningY=1
+Image Width=308
+Image Height=342
+Exposure=40.0 ms
+Rotation=0
+FlipV=0
+FlipH=0
+[Grab Parameters End]
+[Tab Device Info]
+Camera=DV8285_VP 2611
+ControllerCard=CCI-23
+DriverVersion=2.90.33017.0
+CofVersion=291
+VxDVersion=4.31
+SoftwareTrigger=Not Supported
+BitDepth=14
+FPGA_Version=4.0
+Ocx_Version=5.4.1.4
+Ocx_Time=16:24:22 Jun 28 2011
+Ocx_File=C:\PROGRA~1\ANDORB~1\COMMON~1\KIDAND~2.OCX
+
+[Tab Device Info End]
+[Tab Exposure]
+Window=308 : 342
+Shutter=Open
+Binning=1x1
+Temperature - Actual =-30
+Display Control - Fastest=Unchecked
+Display Control - Display Rate=1
+Gains - Pre-Amp-Gain=1.00
+EM Gain - Enabled=Unchecked
+Gains - EMGain=3
+Exposure Time - Frame Transfer=Unchecked
+Exposure Time - unit=ms
+Exposure Time - exposure value=40.0
+Exposure Time - Readout in ms=12.060
+Experiment Control - FLZ=Unchecked
+Experiment Control - Trig Mode=Free Run
+Use Frame averaging=Unchecked
+Frames to be averaged=2
+Fastest Grab=Unchecked
+Available memory=1485
+[Tab Exposure End]
+[Tab Temperature/Shutter]
+Temperature Setting=-30
+Actual Temperature=-30
+Cooling=Steady
+Fan=Full
+TTL High Open=Checked
+Shutter Open Transfer Time=60
+Shutter Close Transfer Time=80
+[Tab Temperature/Shutter End]
+[Tab Speed/Amplifer]
+Horizontal Readout=35.000
+Vertical Readout time=[0.564]
+ADC Channel=0
+Vertical Clock Voltage=Normal
+Output Amplifier=EM Port
+Baseline Clamp=Unchecked
+[Tab Speed/Amplifer End]
+[Tab Image Orientation]
+Flip=None
+Rotation in Degrees=None
+[Tab Image Orientation End]
+[Image Info]
+Window Left=260
+Window Top=266
+Window Right=307
+Window Bottom=341
+Window Width=308
+Window Height=342
+Window BinningX=1
+Window BinningY=1
+[Image Info End]
+[First Frame]
+SavedTime=11/4/2024 4:21:23 PM.304
+[First Frame End]
+

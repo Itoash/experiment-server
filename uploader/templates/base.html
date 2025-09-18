@@ -14,6 +14,7 @@
                 <div class="navigation">
                     <a href="/" class="nav-link {{ 'active' if request.url.path == '/' else '' }}">Create New Experiment</a>
                     <a href="/edit" class="nav-link {{ 'active' if request.url.path.startswith('/edit') else '' }}">Edit Existing Experiment</a>
+                    <a href="/download" class="nav-link {{ 'active' if request.url.path.startswith('/download') else '' }}">Download Experiment</a>
                 </div>
             {% endblock %}
         {% endblock %}
@@ -34,6 +35,37 @@
                 setTimeout(() => {
                     window.history.replaceState({}, document.title, window.location.pathname);
                 }, 3000);
+            }
+            
+            // Delete experiment confirmation
+            function confirmDeleteExperiment(experimentName) {
+                if (confirm(`Are you sure you want to delete the experiment "${experimentName}"?\n\nThis action cannot be undone and will permanently remove all data, images, and metadata associated with this experiment.`)) {
+                    deleteExperiment(experimentName);
+                }
+            }
+            
+            // Delete experiment function
+            async function deleteExperiment(experimentName) {
+                try {
+                    const response = await fetch(`/delete/${encodeURIComponent(experimentName)}`, {
+                        method: 'DELETE',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        }
+                    });
+                    
+                    if (response.ok) {
+                        const result = await response.json();
+                        alert(`Experiment "${experimentName}" has been successfully deleted.`);
+                        // Reload the page to show updated experiment list
+                        window.location.reload();
+                    } else {
+                        const error = await response.json();
+                        alert(`Failed to delete experiment: ${error.detail || 'Unknown error'}`);
+                    }
+                } catch (error) {
+                    alert(`Error deleting experiment: ${error.message}`);
+                }
             }
         </script>
     {% endblock %}

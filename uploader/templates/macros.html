@@ -33,7 +33,7 @@
 {% endmacro %}
 
 <!-- Form field macro for file inputs -->
-{% macro file_field(name, label, required=false, multiple=false, help_text="", toggle=false, mode_toggle=false) %}
+{% macro file_field(name, label, required=false, multiple=false, help_text="", toggle=false, mode_toggle=false, webkitdirectory=false) %}
 <div class="form-group">
     <label for="{{ name }}" class="{{ 'required' if required else '' }}">{{ label }}</label>
     {% if mode_toggle %}
@@ -43,6 +43,7 @@
                 id="{{ name }}" 
                 type="file" 
                 {% if multiple %}multiple{% endif %}
+                {% if webkitdirectory %}webkitdirectory directory{% endif %}
                 {% if required %}required{% endif %}
             >
             <div class="overwrite-option">
@@ -59,6 +60,7 @@
             id="{{ name }}" 
             type="file" 
             {% if multiple %}multiple{% endif %}
+            {% if webkitdirectory %}webkitdirectory directory{% endif %}
             {% if required %}required{% endif %}
         >
     {% endif %}
@@ -91,27 +93,28 @@
     <div class="experiment-header">
         <h4>{{ exp_name }}</h4>
         <span class="experiment-date">
-            {% if exp_data.start_time %}
-                {{ exp_data.start_time[:10] }}
+            {% if exp_data.metadata.start_time %}
+                {{ exp_data.metadata.start_time[:10] }}
             {% endif %}
         </span>
     </div>
     <div class="experiment-details">
-        <p><strong>Cell Type:</strong> {{ exp_data.cell_type or 'Not specified' }}</p>
-        {% if exp_data.condition %}
-            <p><strong>Condition:</strong> {{ exp_data.condition }}
-            {% if exp_data.condition_amount and exp_data.condition_unit %}
-                ({{ exp_data.condition_amount }} {{ exp_data.condition_unit }})
+        <p><strong>Cell Type:</strong> {{ exp_data.metadata.cell_type or 'Not specified' }}</p>
+        {% if exp_data.metadata.condition %}
+            <p><strong>Condition:</strong> {{ exp_data.metadata.condition }}
+            {% if exp_data.metadata.condition_amount and exp_data.metadata.condition_unit %}
+                ({{ exp_data.metadata.condition_amount }} {{ exp_data.metadata.condition_unit }})
             {% endif %}
             </p>
         {% endif %}
         <p><strong>Files:</strong> 
-            {{ (exp_data.data_files|length) if exp_data.data_files else 0 }} data files,
-            {{ file_count(exp_data.images) }} images
+            {{ (exp_data.data_files|length) if exp_data.data_files else 1 }} data files,
+            {{ file_count(exp_data.metadata.images) }} images
         </p>
     </div>
     <div class="experiment-actions">
         <a href="/edit/{{ exp_name }}" class="btn btn-primary">Edit Experiment</a>
+        <button onclick="confirmDeleteExperiment('{{ exp_name }}')" class="btn btn-danger">Delete</button>
     </div>
 </div>
 {% endmacro %}
@@ -124,3 +127,5 @@
         0
     {% endif %}
 {% endmacro %}
+
+

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "macros.html" import form_field, textarea_field, file_field %}
+{% from "websocket_uploader.html" import file_field_ws, websocket_upload_script %}
 
 {% block title %}Edit {{ experiment_name }} - Experiment Server{% endblock %}
 
@@ -40,7 +41,7 @@
         {{ textarea_field("notes", "Notes", value=experiment.metadata.notes or '', placeholder="Additional experiment notes (optional)") }}
         
         <!-- Existing Files Display -->
-        {% if experiment.data_files or experiment.images %}
+        {% if experiment.metadata.data_files or experiment.metadata.images %}
             {% include "partials/existing_files.html" %}
         {% endif %}
         
@@ -49,15 +50,192 @@
             <h3>� Update Files</h3>
             <p class="info-text">Use the toggle to choose between adding new files or replacing existing ones.</p>
             
-            {{ file_field("experiment_files", "Experiment Data", multiple=true, mode_toggle=true) }}
+            {{ file_field("experiment_files", "Experiment Data", multiple=false, mode_toggle=true) }}
             {{ file_field("ac_images", "AC Images", multiple=true, mode_toggle=true) }}
             {{ file_field("dc_images", "DC Images", multiple=true, mode_toggle=true) }}
             {{ file_field("seg_images", "Segmentation Images", multiple=true, mode_toggle=true) }}
-            {{ file_field("raw_images", "Raw Images", multiple=true, mode_toggle=true) }}
-        </div>
+            {{ file_field_ws("raw_images", "Raw Images (select folders)",  mode_toggle=true, help_text="Select folders to upload all contained image files. Non-image files will be ignored.") }}
+            
 
-        <input type="submit" value="💾 Update Experiment">
+        </div>
+        <input type="hidden" id="websocket_upload_completed" value="false">
+        <input type="hidden" id="raw_image_paths" name="raw_image_paths" value="">
+        <input type="submit" value="💾 Update Experiment", id="uploadButton">
     </form>
     
     <p class="info-text">Changes will update the experiment metadata and add any new files</p>
 {% endblock %}
+{% block scripts %}
+    {{ super() }}
+    {{ websocket_upload_script( upload_endpoint="/ws/upload",
+                                experiment_name_input_id="experiment_name",
+                                upload_button_id="uploadButton", 
+                                progress_container_id="progressContainer", 
+                                status_messages_id="statusMessages", 
+                                directory_input_id="directoryInput") }}
+    <script>
+        // Dynamic required fields logic for condition-related inputs
+        const conditionInput = document.getElementById('condition');
+        const conditionAmount = document.getElementById('condition_amount');
+        const conditionUnit = document.getElementById('condition_unit');
+        const conditionTime = document.getElementById('condition_time');
+        const startTime = document.getElementById('start_time');
+        const endTime = document.getElementById('end_time');
+        const ACImagesInput = document.getElementById('ac_images');
+        const DCImagesInput = document.getElementById('dc_images');
+        const segImagesInput = document.getElementById('seg_images');
+
+        function updateConditionFields() {
+            const hasCondition = !['', 'None', 'N/A', 'NA', 'null', 'Null', 'NULL','CTRL'].includes(conditionInput.value.trim());
+            
+            conditionAmount.required = hasCondition;
+            conditionUnit.required = hasCondition;
+            conditionTime.required = hasCondition;
+            
+            // Update visual indicators
+            const amountLabel = document.querySelector('label[for="condition_amount"]');
+            const unitLabel = document.querySelector('label[for="condition_unit"]');
+            const timeLabel = document.querySelector('label[for="condition_time"]');
+            
+            if (hasCondition) {
+                amountLabel.classList.add('required');
+                unitLabel.classList.add('required');
+                timeLabel.classList.add('required');
+            } else {
+                amountLabel.classList.remove('required');
+                unitLabel.classList.remove('required');
+                timeLabel.classList.remove('required');
+            }
+        }
+        
+        function validateDates() {
+            const start = new Date(startTime.value);
+            const end = new Date(endTime.value);
+            const condition = new Date(conditionTime.value);
+            
+            // End time cannot be before start time
+            if (endTime.value && startTime.value && end < start) {
+                endTime.setCustomValidity('End time cannot be before start time');
+            } else {
+                endTime.setCustomValidity('');
+            }
+            
+            // Condition time must be between start and end time
+            if (conditionTime.value && startTime.value) {
+                if (condition < start) {
+                    conditionTime.setCustomValidity('Condition time cannot be before start time');
+                } else if (endTime.value && condition > end) {
+                    conditionTime.setCustomValidity('Condition time cannot be after end time');
+                } else {
+                    conditionTime.setCustomValidity('');
+                }
+            } else {
+                conditionTime.setCustomValidity('');
+            }
+        }
+
+        // Validation for image file inputs
+        function validateImageFiles(input, filter_string=null) {
+            input.addEventListener('change', function() {
+                const files = Array.from(this.files);
+                const imageFiles = files.filter(file => {
+                    const ext = file.name.split('.').pop().toLowerCase();
+                    return ['tif', 'tiff', 'png', 'jpg', 'jpeg'].includes(ext);
+                });
+                const filteredfiles = imageFiles.filter(file => {
+                    if (!filter_string) return true;
+                    return file.name.toLowerCase().includes(filter_string.toLowerCase());
+                });
+                if (filteredfiles.length === 0) {
+                    alert('No valid image files selected. Please select files with extensions: TIF, PNG, JPG, and containing "' + (filter_string ? filter_string : 'AC/DC/SEG') + '" in the filename.');
+                    this.value = ''; // Clear the input
+                    return;
+                }
+                if (files.length > imageFiles.length) {
+                    const filteredCount = files.length - imageFiles.length;
+                    alert(`Note: ${filteredCount} non-image files will be excluded from upload. Only image files (TIF, PNG, JPG) will be uploaded.`);
+                }
+            });
+        }
+        
+        // Apply validation to all image inputs
+        validateImageFiles(ACImagesInput, 'ac');
+        validateImageFiles(DCImagesInput,'dc');
+        validateImageFiles(segImagesInput,'seg');
+        
+        // Test WebSocket connection function
+        function testWebSocketConnection() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const testId = 'test_' + Math.random().toString(36).substr(2, 9);
+            const testUrl = `${protocol}//${window.location.host}/ws/upload/${testId}?upload_name=test`;
+            
+            console.log('Testing WebSocket connection to:', testUrl);
+            
+            const testSocket = new WebSocket(testUrl);
+            
+            testSocket.onopen = function() {
+                console.log('✅ WebSocket test connection successful');
+                testSocket.close();
+            };
+            
+            testSocket.onerror = function(error) {
+                console.error('❌ WebSocket test connection failed:', error);
+            };
+            
+            testSocket.onclose = function(event) {
+                console.log('WebSocket test connection closed:', event.code, event.reason);
+            };
+        }
+
+        // Call this on page load to test connectivity
+        document.addEventListener('DOMContentLoaded', function() {
+            testWebSocketConnection();
+        });
+
+
+        function handleSubmit(event) {
+            console.log('Form submission started');
+            
+            // Validate all fields first
+            validateDates();
+            updateConditionFields();
+            
+            // Check if any fields have validation errors
+            const invalidFields = document.querySelector('form').querySelectorAll(':invalid');
+            if (invalidFields.length > 0) {
+                console.log('Form validation failed', invalidFields);
+                event.preventDefault();
+                invalidFields[0].focus();
+                return false;
+            }
+            
+            // Check WebSocket upload status
+            const websocketCompleted = document.getElementById('websocket_upload_completed').value === 'true';
+            const hasSelectedFiles = typeof selectedFiles !== 'undefined' && selectedFiles && selectedFiles.length > 0;
+            
+            console.log('WebSocket status:', {
+                completed: websocketCompleted,
+                hasFiles: hasSelectedFiles,
+                directoryUploadCompleted: typeof directoryUploadCompleted !== 'undefined' ? directoryUploadCompleted : false
+            });
+            
+            // If files were selected but WebSocket upload not completed, prevent submission
+            if (hasSelectedFiles && !websocketCompleted) {
+                console.log('WebSocket upload required but not completed');
+                event.preventDefault();
+                alert('Please complete the directory upload first by clicking "Start Directory Upload".');
+                return false;
+            }
+            
+            console.log('Form validation passed, submitting');
+            return true;
+        }
+        // Event listeners
+        conditionInput.addEventListener('input', updateConditionFields);
+        startTime.addEventListener('change', validateDates);
+        endTime.addEventListener('change', validateDates);
+        conditionTime.addEventListener('change', validateDates);
+    </script>
+{% endblock %}
+
+

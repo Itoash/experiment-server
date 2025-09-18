@@ -1,5 +1,9 @@
 fastapi
-uvicorn
+uvicorn[standard]
 python-multipart
 jinja2
+sqlalchemy
+numpy
+psycopg2-binary
 dotenv
+websockets
