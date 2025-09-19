@@ -52,6 +52,25 @@ def _get_parents(paths:List[Dict[str, str]]) -> List[str]:
                 parents.add(parent)
     return list(parents)
 
+async def get_raw_image_paths_from_file(raw_image_paths_file: UploadFile) -> List[Dict[str, str]]:
+    """Retrieve raw image paths from uploaded JSON file"""
+    if not raw_image_paths_file or raw_image_paths_file.filename == '':
+        return []
+    
+    try:
+        # Read the file content
+        content = await raw_image_paths_file.read()
+        
+        # Parse JSON
+        path_data = json.loads(content.decode('utf-8'))
+        
+        logging.info(f"Loaded {len(path_data)} raw image paths from file")
+        return path_data
+        
+    except Exception as e:
+        logging.error(f"Error reading raw image paths file: {str(e)}")
+        return []
+
 @app.post("/upload/", response_class=HTMLResponse)
 async def upload_files(
     request: Request,
@@ -68,7 +87,7 @@ async def upload_files(
     ac_images: List[UploadFile] = File(default=[]),
     dc_images: List[UploadFile] = File(default=[]),
     seg_images: List[UploadFile] = File(default=[]),
-    raw_image_paths: Optional[str] = Form(None),  # JSON string with webkitRelativePath data
+    raw_image_paths: UploadFile = File(None),  # Changed to UploadFile
     websocket_upload_id: Optional[str] = Form(None),
     websocket_upload_completed: str = Form("false")
 ):
@@ -114,20 +133,9 @@ async def upload_files(
             saved_dc = save_processed_images(dc_images, "DC", experiment_name)
             saved_seg = save_processed_images(seg_images, "seg", experiment_name)
 
-            # Save raw images to raw directory with path information
-            path_data = []
-            if raw_image_paths:
-                try:
-                    path_data = json.loads(raw_image_paths)
-                    logging.info(f"Received {len(path_data)} path entries for raw images")
-                    logging.info(f"Raw image paths JSON size: {len(raw_image_paths)} characters")
-                    if len(path_data) > 0:
-                        logging.info(f"Sample path data: {path_data[:3]}")  # Log first 3 entries
-                except json.JSONDecodeError as e:
-                    logging.warning(f"Failed to parse raw_image_paths JSON: {str(e)}")
-                    logging.warning(f"Raw paths data preview: {raw_image_paths[:500]}...")  # Show first 500 chars
-            else:
-                logging.warning("No raw_image_paths received from frontend")
+            # Get raw image paths from uploaded file
+            path_data = await get_raw_image_paths_from_file(raw_image_paths)
+            
             
             saved_raw = _get_parents(path_data)
             if raw_image_paths and len(path_data) == 0:
@@ -259,7 +267,7 @@ async def update_experiment(
     dc_images_mode: Optional[str] = Form(None),  # Add mode toggle
     seg_images: List[UploadFile] = File(default=[]),
     seg_images_mode: Optional[str] = Form(None),  # Add mode toggle
-    raw_image_paths: Optional[str] = Form(None),  # JSON string with webkitRelativePath data
+    raw_image_paths: UploadFile = File(None),  # Changed to UploadFile
     raw_images_mode: Optional[str] = Form(None)  # Add mode toggle
 ):
     if experiment_name not in experiment_locks:
@@ -284,20 +292,9 @@ async def update_experiment(
                 except ValueError:
                     parsed_condition_amount = None
             
-            # Save raw images to raw directory with path information
-            path_data = []
-            if raw_image_paths:
-                try:
-                    path_data = json.loads(raw_image_paths)
-                    logging.info(f"Received {len(path_data)} path entries for raw images")
-                    logging.info(f"Raw image paths JSON size: {len(raw_image_paths)} characters")
-                    if len(path_data) > 0:
-                        logging.info(f"Sample path data: {path_data[:3]}")  # Log first 3 entries
-                except json.JSONDecodeError as e:
-                    logging.warning(f"Failed to parse raw_image_paths JSON: {str(e)}")
-                    logging.warning(f"Raw paths data preview: {raw_image_paths[:500]}...")  # Show first 500 chars
-            else:
-                logging.warning("No raw_image_paths received from frontend")
+            
+            # Get raw image paths from uploaded file
+            path_data = await get_raw_image_paths_from_file(raw_image_paths)
             
             saved_raw = _get_parents(path_data)
             if raw_image_paths and len(path_data) == 0:

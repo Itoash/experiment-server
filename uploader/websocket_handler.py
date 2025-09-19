@@ -111,6 +111,8 @@ class DirectoryUploadManager:
                     
                     if data["type"] == "file":
                         await self._save_file(data, upload_id, websocket)
+                    elif data["type"] == "batch":
+                        await self._save_batch(data, upload_id, websocket)
                     elif data["type"] == "complete":
                         await self._complete_upload(upload_id, websocket)
                         break
@@ -170,6 +172,54 @@ class DirectoryUploadManager:
             await websocket.send_json({
                 "type": "error",
                 "message": f"Error saving file {data.get('path', 'unknown')}: {str(e)}"
+            })
+
+    async def _save_batch(self, data: dict, upload_id: str, websocket: WebSocket):
+        """Save batch of files maintaining directory structure"""
+        try:
+            batch_files = data["files"]
+            batch_number = data.get("batch_number", 1)
+            total_batches = data.get("total_batches", 1)
+            
+            logger.info(f"Processing batch {batch_number}/{total_batches} with {len(batch_files)} files for upload {upload_id}")
+            
+            batch_size = 0
+            saved_files = []
+            
+            for file_data in batch_files:
+                file_path = file_data["path"]
+                file_content = base64.b64decode(file_data["content"])
+                
+                full_path = os.path.join(self.active_uploads[upload_id]["upload_dir"], file_path)
+                os.makedirs(os.path.dirname(full_path), exist_ok=True)
+
+                with open(full_path, "wb") as f:
+                    f.write(file_content)
+                
+                self.active_uploads[upload_id]["files_received"] += 1
+                batch_size += len(file_content)
+                saved_files.append(file_path)
+            
+            self.active_uploads[upload_id]["total_size"] += batch_size
+            
+            logger.info(f"Successfully saved batch {batch_number} with {len(saved_files)} files (total size: {batch_size} bytes)")
+            
+            await websocket.send_json({
+                "type": "batch_received",
+                "batch_number": batch_number,
+                "total_batches": total_batches,
+                "files_in_batch": len(saved_files),
+                "batch_size": batch_size,
+                "files_received": self.active_uploads[upload_id]["files_received"],
+                "total_size": self.active_uploads[upload_id]["total_size"],
+                "saved_files": saved_files[:3] if len(saved_files) > 3 else saved_files  # Show first few files
+            })
+            
+        except Exception as e:
+            logger.error(f"Error saving batch for upload {upload_id}: {e}")
+            await websocket.send_json({
+                "type": "error",
+                "message": f"Error saving batch: {str(e)}"
             })
     
     async def _complete_upload(self, upload_id: str, websocket: WebSocket):

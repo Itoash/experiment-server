@@ -68,9 +68,10 @@
 <script>
 // Global variables for WebSocket upload state - ensure they're properly initialized
 let selectedFiles = [];
-let websocket = null;
+let websockets = []; // Changed from single websocket to array
 let uploadId = null;
 let directoryUploadCompleted = false;
+const MAX_CONCURRENT_CONNECTIONS = 4; // Configurable number of connections
 
 // Debug logging function
 function debugLog(message, data = null) {
@@ -175,15 +176,12 @@ function addStatusMessage(message, type = 'info') {
     }
 }
 
-// Start directory upload process
+// Start directory upload process with multiple connections
 function startDirectoryUpload() {
     return new Promise((resolve, reject) => {
-        
-        
         const uploadNameInput = document.getElementById('experiment_name');
         const uploadName = uploadNameInput ? uploadNameInput.value.trim() : '';
     
-        
         if (!uploadName) {
             const error = new Error('No experiment name');
             debugLog('Error: No experiment name');
@@ -200,9 +198,9 @@ function startDirectoryUpload() {
             return;
         }
 
-        debugLog('Starting WebSocket upload for', selectedFiles.length, 'files');
+        debugLog(`Starting WebSocket upload with ${MAX_CONCURRENT_CONNECTIONS} connections for ${selectedFiles.length} files`);
 
-        // Show progress container with enhanced visibility
+        // Show progress container
         const progressContainer = document.getElementById('progressContainer');
         progressContainer.style.display = 'block';
         progressContainer.style.border = '2px solid #007bff';
@@ -212,7 +210,6 @@ function startDirectoryUpload() {
         progressContainer.style.marginTop = '10px';
 
         uploadId = generateUploadId();
-        
         
         // Store upload ID for form submission
         let uploadIdInput = document.getElementById('websocket_upload_id');
@@ -228,189 +225,338 @@ function startDirectoryUpload() {
         const overwriteCheckbox = document.querySelector('input[data-websocket-overwrite="true"]');
         const overwriteMode = overwriteCheckbox ? overwriteCheckbox.checked : false;
         
+        // Create multiple WebSocket connections
+        createMultipleConnections(uploadName, overwriteMode, resolve, reject);
+    });
+}
+
+// Create multiple WebSocket connections
+function createMultipleConnections(uploadName, overwriteMode, resolve, reject) {
+    // Close any existing connections
+    closeAllConnections();
+    
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    let connectionsReady = 0;
+    let uploadStarted = false;
+    
+    // Create the specified number of connections
+    for (let i = 0; i < MAX_CONCURRENT_CONNECTIONS; i++) {
+        const wsUrl = `${protocol}//${window.location.host}/ws/upload/${uploadId}_${i}?upload_name=${encodeURIComponent(uploadName)}&overwrite=${overwriteMode}`;
+        const ws = new WebSocket(wsUrl);
         
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/ws/upload/${uploadId}?upload_name=${encodeURIComponent(uploadName)}&overwrite=${overwriteMode}`;
+        ws.connectionId = i;
+        ws._promiseResolve = resolve;
+        ws._promiseReject = reject;
         
-        // Close any existing WebSocket connection first
-        if (websocket) {
-            debugLog('Closing existing WebSocket connection');
-            websocket.close();
-            websocket = null;
-        }
-        
-        websocket = new WebSocket(wsUrl);
-        
-        // Store resolve/reject functions for use in other handlers
-        websocket._promiseResolve = resolve;
-        websocket._promiseReject = reject;
-        
-        websocket.onopen = function() {
-            addStatusMessage('Connected to server, starting directory upload...', 'info');
+        ws.onopen = function() {
+            debugLog(`Connection ${this.connectionId} opened`);
+            addStatusMessage(`Connection ${this.connectionId + 1} established...`, 'info');
         };
         
-        websocket.onmessage = async function(event) {
+        ws.onmessage = function(event) {
             const data = JSON.parse(event.data);
             
             switch(data.type) {
                 case 'ready':
-                    addStatusMessage('Server ready, uploading files...', 'info');
-                    await uploadFiles();
+                    connectionsReady++;
+                    debugLog(`Connection ${this.connectionId} ready (${connectionsReady}/${MAX_CONCURRENT_CONNECTIONS})`);
+                    
+                    if (connectionsReady === MAX_CONCURRENT_CONNECTIONS && !uploadStarted) {
+                        uploadStarted = true;
+                        addStatusMessage('All connections ready, starting parallel upload...', 'info');
+                        uploadFilesParallel();
+                    }
                     break;
                 
                 case 'progress':
-                    updateProgressImmediate(data);
+                case 'batch_received':
+                    handleParallelProgress(data);
                     break;
                 
                 case 'complete':
-                    handleUploadComplete(data);
+                    handleConnectionComplete(this.connectionId, data);
                     break;
                 
                 case 'error':
-                    debugLog('Server error received:', data.message);
-                    addStatusMessage(`Upload error: ${data.message}`, 'error');
-                    resetUpload();
-                    if (websocket._promiseReject) {
-                        websocket._promiseReject(new Error(data.message));
+                    debugLog(`Connection ${this.connectionId} error:`, data.message);
+                    addStatusMessage(`Connection ${this.connectionId + 1} error: ${data.message}`, 'error');
+                    closeAllConnections();
+                    if (this._promiseReject) {
+                        this._promiseReject(new Error(data.message));
                     }
                     break;
-                    
-                default:
-                    debugLog('Unknown message type received:', data.type);
-                    break;
             }
         };
         
-        websocket.onerror = function(error) {
-            debugLog('WebSocket error occurred:', error);
-            addStatusMessage('WebSocket connection error', 'error');
-            resetUpload();
-            if (websocket._promiseReject) {
-                websocket._promiseReject(new Error('WebSocket connection error'));
+        ws.onerror = function(error) {
+            debugLog(`Connection ${this.connectionId} error:`, error);
+            addStatusMessage(`Connection ${this.connectionId + 1} error`, 'error');
+            closeAllConnections();
+            if (this._promiseReject) {
+                this._promiseReject(new Error('WebSocket connection error'));
             }
         };
         
-        websocket.onclose = function(event) {
-            debugLog('WebSocket connection closed:', event.code, event.reason);
-            debugLog('directoryUploadCompleted at close:', directoryUploadCompleted);
-            
+        ws.onclose = function(event) {
+            debugLog(`Connection ${this.connectionId} closed:`, event.code, event.reason);
             if (!directoryUploadCompleted && event.code !== 1000) {
-                debugLog('WebSocket closed unexpectedly, treating as error');
-                addStatusMessage('WebSocket connection closed unexpectedly', 'error');
-                resetUpload();
-                if (websocket._promiseReject) {
-                    websocket._promiseReject(new Error('WebSocket connection closed unexpectedly'));
+                debugLog(`Connection ${this.connectionId} closed unexpectedly`);
+                if (!uploadStarted) {
+                    addStatusMessage(`Connection ${this.connectionId + 1} closed unexpectedly`, 'error');
+                    closeAllConnections();
+                    if (this._promiseReject) {
+                        this._promiseReject(new Error('WebSocket connection closed unexpectedly'));
+                    }
                 }
-            } else {
-                debugLog('WebSocket closed normally or upload already completed');
             }
         };
-    });
+        
+        websockets.push(ws);
+    }
 }
-
-/// Upload files via WebSocket
-async function uploadFiles() {
-    debugLog('=== uploadFiles called ===');
+// Upload files in parallel across multiple connections
+// Upload files in parallel across multiple connections - updated with better progress tracking
+async function uploadFilesParallel() {
+    debugLog('=== uploadFilesParallel called ===');
     debugLog('Files to upload:', selectedFiles.length);
     
-    let uploadedCount = 0;
-    let totalSize = 0;
+    const BATCH_SIZE_LIMIT = 5 * 1024 * 1024; // 5MB batch limit
+    const MAX_FILES_PER_BATCH = 10;
+
+    // Reset progress tracker
+    progressTracker.reset();
+    progressTracker.totalFiles = selectedFiles.length;
+    progressTracker.totalSize = selectedFiles.reduce((sum, file) => sum + file.size, 0);
+
+    // Create batches
+    const batches = [];
+    let currentBatch = [];
+    let currentBatchSize = 0;
     
     for (let i = 0; i < selectedFiles.length; i++) {
         const file = selectedFiles[i];
-        debugLog(`Preparing file ${i + 1}/${selectedFiles.length}:`, file.webkitRelativePath);
         
-        try {
-            // Wait for server to be ready for next file
-            await sendFileAndWaitForAck(file, i + 1, selectedFiles.length);
-            
-            uploadedCount++;
-            totalSize += file.size;
-            
-            // Update progress immediately on client side
-            updateProgressImmediate(uploadedCount, selectedFiles.length, totalSize, file.name);
-            
-        } catch (error) {
-            debugLog(`Error uploading file ${file.name}:`, error.message);
-            addStatusMessage(`Error uploading ${file.name}: ${error.message}`, 'error');
-            throw error; // Stop upload on error
+        if ((currentBatchSize + file.size > BATCH_SIZE_LIMIT || 
+             currentBatch.length >= MAX_FILES_PER_BATCH) && 
+            currentBatch.length > 0) {
+            batches.push(currentBatch);
+            currentBatch = [];
+            currentBatchSize = 0;
+        }
+        
+        currentBatch.push(file);
+        currentBatchSize += file.size;
+    }
+    
+    if (currentBatch.length > 0) {
+        batches.push(currentBatch);
+    }
+    
+    progressTracker.totalBatches = batches.length;
+    
+    debugLog(`Uploading ${selectedFiles.length} files in ${batches.length} batches across ${websockets.length} connections`);
+    
+    // Initialize progress display
+    updateProgressDisplay();
+    
+    // Distribute batches across connections
+    const connectionPromises = [];
+    
+    for (let i = 0; i < websockets.length; i++) {
+        const connectionBatches = batches.filter((_, batchIndex) => batchIndex % websockets.length === i);
+        if (connectionBatches.length > 0) {
+            connectionPromises.push(uploadBatchesOnConnection(websockets[i], connectionBatches, i));
         }
     }
     
-    // Send completion signal
-    debugLog('Sending completion signal');
-    if (websocket && websocket.readyState === WebSocket.OPEN) {
-        websocket.send(JSON.stringify({
-            type: 'complete'
-        }));
-        debugLog('Completion signal sent');
+    try {
+        await Promise.all(connectionPromises);
+        debugLog('All connections completed upload');
+        
+        // Send completion signal to all connections
+        websockets.forEach((ws, index) => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'complete' }));
+                debugLog(`Sent completion signal to connection ${index}`);
+            }
+        });
+        
+    } catch (error) {
+        debugLog('Error in parallel upload:', error);
+        throw error;
+    }
+}
+// Upload batches on a specific connection
+async function uploadBatchesOnConnection(ws, batches, connectionId) {
+    debugLog(`Connection ${connectionId} uploading ${batches.length} batches`);
+    
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+        const batch = batches[batchIndex];
+        
+        try {
+            await sendBatchOnConnection(ws, batch, batchIndex + 1, batches.length, connectionId);
+            debugLog(`Connection ${connectionId} completed batch ${batchIndex + 1}`);
+        } catch (error) {
+            debugLog(`Connection ${connectionId} error on batch ${batchIndex + 1}:`, error);
+            throw error;
+        }
     }
 }
 
-// New function to send file and wait for acknowledgment
-function sendFileAndWaitForAck(file, fileNumber, totalFiles) {
+// Send batch on specific connection - updated with better progress tracking
+function sendBatchOnConnection(ws, files, batchNumber, totalBatches, connectionId) {
     return new Promise(async (resolve, reject) => {
         const timeout = setTimeout(() => {
-            reject(new Error(`Timeout waiting for acknowledgment of ${file.name}`));
-        }, 30000); // 30 second timeout per file
+            reject(new Error(`Connection ${connectionId} timeout on batch ${batchNumber}`));
+        }, 60000);
         
-        // Set up one-time message handler for this file
-        const originalOnMessage = websocket.onmessage;
-        websocket.onmessage = function(event) {
+        const originalOnMessage = ws.onmessage;
+        ws.onmessage = function(event) {
             const data = JSON.parse(event.data);
             
-            if (data.type === 'file_received' || data.type === 'progress') {
+            if (data.type === 'batch_received' || data.type === 'progress') {
                 clearTimeout(timeout);
-                websocket.onmessage = originalOnMessage; // Restore original handler
+                ws.onmessage = originalOnMessage;
+                
+                // Update progress tracker with this batch's completion
+                const batchSize = files.reduce((sum, file) => sum + file.size, 0);
+                progressTracker.updateConnectionProgress(connectionId, files.length, batchSize, batchNumber, totalBatches);
+                updateProgressDisplay();
+                
                 resolve(data);
             } else {
-                // Pass other messages to original handler
                 originalOnMessage(event);
             }
         };
         
         try {
-            const content = await fileToBase64(file);
+            const batchFiles = [];
+            
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const content = await fileToBase64(file);
+                batchFiles.push({
+                    path: file.webkitRelativePath,
+                    content: content.split(',')[1],
+                    size: file.size,
+                    name: file.name
+                });
+            }
+            
             const message = {
-                type: 'file',
-                path: file.webkitRelativePath,
-                content: content.split(',')[1], // Remove data:mime;base64, prefix
-                file_number: fileNumber,
-                total_files: totalFiles
+                type: 'batch',
+                files: batchFiles,
+                batch_number: batchNumber,
+                total_batches: totalBatches,
+                connection_id: connectionId
             };
             
-            if (websocket && websocket.readyState === WebSocket.OPEN) {
-                websocket.send(JSON.stringify(message));
-                debugLog(`Sent file ${fileNumber}: ${file.webkitRelativePath}`);
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(message));
+                debugLog(`Connection ${connectionId} sent batch ${batchNumber} with ${files.length} files`);
             } else {
                 clearTimeout(timeout);
-                websocket.onmessage = originalOnMessage;
+                ws.onmessage = originalOnMessage;
                 reject(new Error('WebSocket connection not available'));
             }
         } catch (error) {
             clearTimeout(timeout);
-            websocket.onmessage = originalOnMessage;
+            ws.onmessage = originalOnMessage;
             reject(error);
         }
     });
 }
 
-// New function for immediate progress updates
-function updateProgressImmediate(filesUploaded, totalFiles, totalSize, currentFile) {
+// Track progress across all connections - improved implementation
+let progressTracker = {
+    totalFiles: 0,
+    totalBatches: 0,
+    completedFiles: 0,
+    completedBatches: 0,
+    totalSize: 0,
+    uploadedSize: 0,
+    connectionProgress: {}, // Track per-connection progress
+    reset: function() {
+        this.totalFiles = 0;
+        this.totalBatches = 0;
+        this.completedFiles = 0;
+        this.completedBatches = 0;
+        this.totalSize = 0;
+        this.uploadedSize = 0;
+        this.connectionProgress = {};
+    },
+    updateConnectionProgress: function(connectionId, files, size, batchNumber, totalBatchesForConnection) {
+        if (!this.connectionProgress[connectionId]) {
+            this.connectionProgress[connectionId] = {
+                completedFiles: 0,
+                completedBatches: 0,
+                totalBatches: totalBatchesForConnection,
+                uploadedSize: 0
+            };
+        }
+        
+        this.connectionProgress[connectionId].completedFiles += files;
+        this.connectionProgress[connectionId].completedBatches = batchNumber;
+        this.connectionProgress[connectionId].uploadedSize += size;
+        
+        // Recalculate totals
+        this.completedFiles = Object.values(this.connectionProgress)
+            .reduce((sum, conn) => sum + conn.completedFiles, 0);
+        this.completedBatches = Object.values(this.connectionProgress)
+            .reduce((sum, conn) => sum + conn.completedBatches, 0);
+        this.uploadedSize = Object.values(this.connectionProgress)
+            .reduce((sum, conn) => sum + conn.uploadedSize, 0);
+    },
+    getProgress: function() {
+        const fileProgress = this.totalFiles > 0 ? (this.completedFiles / this.totalFiles) * 100 : 0;
+        const batchProgress = this.totalBatches > 0 ? (this.completedBatches / this.totalBatches) * 100 : 0;
+        const sizeProgress = this.totalSize > 0 ? (this.uploadedSize / this.totalSize) * 100 : 0;
+        
+        // Use the most conservative progress estimate
+        return Math.min(fileProgress, batchProgress, sizeProgress);
+    }
+};
+
+// New unified progress display function
+function updateProgressDisplay() {
     const progressFill = document.getElementById('progressFill');
     const progressText = document.getElementById('progressText');
     
     if (!progressFill || !progressText) return;
     
-    const percentage = (filesUploaded / totalFiles) * 100;
-    progressFill.style.width = `${percentage}%`;
+    const percentage = progressTracker.getProgress();
+    progressFill.style.width = `${Math.min(percentage, 100)}%`;
     
-    progressText.textContent = 
-        `Uploaded ${filesUploaded} of ${totalFiles} files ` +
-        `(${formatFileSize(totalSize)}) - Current: ${currentFile}`;
+    // Create detailed progress text
+    const connectionDetails = Object.entries(progressTracker.connectionProgress)
+        .map(([id, progress]) => `Conn${parseInt(id) + 1}: ${progress.completedBatches}/${progress.totalBatches}`)
+        .join(', ');
     
-    debugLog(`Progress: ${filesUploaded}/${totalFiles} (${percentage.toFixed(1)}%)`);
+    progressText.innerHTML = `
+        <div>Uploading ${progressTracker.completedFiles}/${progressTracker.totalFiles} files (${percentage.toFixed(1)}%)</div>
+        <div>Size: ${formatFileSize(progressTracker.uploadedSize)}/${formatFileSize(progressTracker.totalSize)}</div>
+        <div>Batches: ${progressTracker.completedBatches}/${progressTracker.totalBatches} | ${connectionDetails}</div>
+    `;
+    
+    debugLog(`Progress: ${progressTracker.completedFiles}/${progressTracker.totalFiles} files (${percentage.toFixed(1)}%)`);
 }
+
+// Replace the old handleParallelProgress function
+function handleParallelProgress(data) {
+    // This function is called when we receive progress updates from the server
+    // The main progress tracking is now handled in sendBatchOnConnection
+    debugLog('Received progress update from server:', data);
+    
+    // If the server sends additional progress info, we can use it here
+    if (data.connection_id !== undefined) {
+        updateProgressDisplay();
+    }
+}
+
+
+
+
+
 
 // Convert file to base64
 function fileToBase64(file) {
@@ -422,52 +568,66 @@ function fileToBase64(file) {
     });
 }
 
-
-// Handle upload completion
-function handleUploadComplete(data) {
-    directoryUploadCompleted = true;
+// Update handleConnectionComplete to use the new progress tracker
+function handleConnectionComplete(connectionId, data) {
+    connectionsCompleted++;
+    debugLog(`Connection ${connectionId} completed. ${connectionsCompleted}/${websockets.length} connections done.`);
     
-    document.getElementById('websocket_upload_completed').value = 'true';
-    storeRawImagePaths(selectedFiles);
-    
-    addStatusMessage(`Upload completed! ${data.files_received} files (${formatFileSize(data.total_size)})`, 'success');
-    
-    const progressFill = document.getElementById('progressFill');
-    const progressText = document.getElementById('progressText');
-    if (progressFill) progressFill.style.width = '100%';
-    if (progressText) progressText.textContent = 'Upload completed!';
-    
-    if (websocket) {
-        if (websocket._promiseResolve) websocket._promiseResolve(data);
-        websocket.close(1000);
-        websocket = null;
+    if (connectionsCompleted === websockets.length) {
+        // All connections completed
+        directoryUploadCompleted = true;
+        
+        document.getElementById('websocket_upload_completed').value = 'true';
+        storeRawImagePaths(selectedFiles);
+        
+        addStatusMessage(`Upload completed! ${progressTracker.totalFiles} files (${formatFileSize(progressTracker.totalSize)}) uploaded via ${websockets.length} parallel connections.`, 'success');
+        
+        // Set progress to 100%
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        if (progressFill) progressFill.style.width = '100%';
+        if (progressText) progressText.textContent = 'Upload completed successfully!';
+        
+        // Close all connections and resolve promise
+        const resolve = websockets[0]._promiseResolve;
+        closeAllConnections();
+        if (resolve) resolve(data);
     }
 }
 
-// Reset upload state
+// Update closeAllConnections to reset progress tracker
+function closeAllConnections() {
+    websockets.forEach((ws, index) => {
+        if (ws) {
+            debugLog(`Closing connection ${index}`);
+            ws.close(1000);
+        }
+    });
+    websockets = [];
+    connectionsCompleted = 0;
+    progressTracker.reset();
+}
+
+
+// Update resetUpload function to handle multiple connections
 function resetUpload() {
     const progressContainer = document.getElementById('progressContainer');
     progressContainer.style.display = 'none';
-    // Reset enhanced styling
     progressContainer.style.border = '';
     progressContainer.style.backgroundColor = '';
     progressContainer.style.padding = '';
     progressContainer.style.borderRadius = '';
     progressContainer.style.marginTop = '';
     
-    // Reset completion flags
     const completedInput = document.getElementById('websocket_upload_completed');
     if (completedInput) completedInput.value = 'false';
     
     directoryUploadCompleted = false;
     
-    if (websocket) {
-        websocket.close();
-        websocket = null;
-    }
+    closeAllConnections();
 }
 
-// Store webkitRelativePath information for each file
+// Store webkitRelativePath information as a file instead of hidden input
 function storeRawImagePaths(files) {
     const pathsData = [];
     files.forEach((file, index) => {
@@ -482,15 +642,37 @@ function storeRawImagePaths(files) {
     
     console.log(`Storing paths for ${pathsData.length} files`);
     
-    // Store in the hidden input field
-    const pathsInput = document.getElementById('raw_image_paths');
-    if (pathsInput) {
-        const jsonData = JSON.stringify(pathsData);
-        pathsInput.value = jsonData;
-        console.log('Stored raw image paths:', pathsData);
-    } else {
-        console.error('Could not find raw_image_paths input field');
+    // Remove existing path inputs
+    const existingInputs = document.querySelectorAll('input[name="raw_image_paths"]');
+    existingInputs.forEach(input => input.remove());
+    
+    const form = document.querySelector('form');
+    if (!form) {
+        console.error('Could not find form element');
+        return;
     }
+    
+    // Create JSON blob
+    const jsonData = JSON.stringify(pathsData);
+    const blob = new Blob([jsonData], { type: 'application/json' });
+    
+    console.log(`JSON data size: ${blob.size} bytes`);
+    
+    // Create a file input and populate it with the blob
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.name = 'raw_image_paths';
+    fileInput.style.display = 'none'; // Hide the input
+    
+    // Create a DataTransfer object to set the file
+    const dataTransfer = new DataTransfer();
+    const file = new File([blob], 'raw_image_paths.json', { type: 'application/json' });
+    dataTransfer.items.add(file);
+    fileInput.files = dataTransfer.files;
+    
+    form.appendChild(fileInput);
+    
+    console.log('Stored raw image paths as file:', pathsData.length, 'entries');
 }
 
 // Store reference to original handleSubmit - this must be done AFTER the original is defined

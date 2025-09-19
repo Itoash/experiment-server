@@ -31,7 +31,10 @@
     >{{ value }}</textarea>
 </div>
 {% endmacro %}
-
+<!-- Specifically for path name input -->
+{% macro hidden_file_field(name) %}
+<input type="file" name="{{ name }}" style="display: none;">
+{% endmacro %}
 <!-- Form field macro for file inputs -->
 {% macro file_field(name, label, required=false, multiple=false, help_text="", toggle=false, mode_toggle=false, webkitdirectory=false) %}
 <div class="form-group">
