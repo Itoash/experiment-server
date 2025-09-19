@@ -161,7 +161,7 @@ def parse_raw_paths(raws: List[str], timepoints: List[float]) -> List[int]:
                     date_part = part
                     # Time should be next part
                     if i + 1 < len(parts):
-                        time_part = parts[i + 1]
+                        time_part = parts[i + 1][:-2].strip() # Remove AM/PM if attached
                     # AM/PM should be after that or separate
                     if i + 2 < len(parts):
                         am_pm = parts[i + 2].strip()
@@ -171,6 +171,7 @@ def parse_raw_paths(raws: List[str], timepoints: List[float]) -> List[int]:
                         if len(am_pm_split) > 1:
                             am_pm = am_pm_split[-1].strip()
                     break
+            logging.info(f'Parsing directory: {dir_name}, found date: {date_part}, time: {time_part}, am/pm: {am_pm}')
             
             if date_part and time_part:
                 try:
@@ -189,7 +190,7 @@ def parse_raw_paths(raws: List[str], timepoints: List[float]) -> List[int]:
                         minute = time_part[2:4]
                         second = time_part[4:6]
                     else:
-                        print(f"Could not parse time format: {time_part}")
+                        logging.warning(f"Could not parse time format: {time_part}")
                         continue
                     
                     # Create datetime string
@@ -201,7 +202,8 @@ def parse_raw_paths(raws: List[str], timepoints: List[float]) -> List[int]:
                         dt = datetime.strptime(datetime_str, '%Y-%m-%d %H:%M:%S')
                     
                     timestamp = dt.timestamp()
-                    
+                    logging.info(f'Parsed timestamp: {timestamp} for directory: {dir_name}')
+                    logging.info(f'Available timepoints: {timepoints}')
                     # Find the closest timepoint
                     if timepoints:
                         time_diffs = [abs(tp - timestamp) for tp in timepoints]
@@ -211,10 +213,10 @@ def parse_raw_paths(raws: List[str], timepoints: List[float]) -> List[int]:
                         timepoint_indices.append(0)  # Default to first timepoint
                         
                 except (ValueError, IndexError) as e:
-                    print(f"Could not parse date/time from directory name: {dir_name}, error: {e}")
+                    logging.warning(f"Could not parse date/time from directory name: {dir_name}, error: {e}")
                     timepoint_indices.append(0)  # Default to first timepoint
             else:
-                print(f"Could not find date/time parts in directory name: {dir_name}")
+                logging.warning(f"Could not find date/time parts in directory name: {dir_name}")
                 timepoint_indices.append(0)  # Default to first timepoint
                 
         elif os.path.isfile(raw) and raw.endswith('.sif'):
@@ -412,31 +414,24 @@ def create_raw_images_from_data(experiment_id: int, raw_paths: List[str],
                                timepoint_indices: List[int], timepoints: List):
     """Creates RawImage objects from raw image paths and timepoint indices."""
     from models_db import RawImage
-    
+    logging.info(f'Creating raw images for experiment {experiment_id}')
+    logging.info(f'Raw paths: {raw_paths}')
+    logging.info(f'Timepoint indices: {timepoint_indices}')
     raw_images = []
     
     for raw_path, timepoint_idx in zip(raw_paths, timepoint_indices):
         if timepoint_idx < len(timepoints):
             timepoint_id = timepoints[timepoint_idx].id
-            
             if os.path.isdir(raw_path):
-                # Add all image files in the directory
-                for filename in os.listdir(raw_path):
-                    if filename.lower().endswith(('.tif', '.tiff', '.png', '.jpg', '.jpeg')):
-                        file_path = os.path.join(raw_path, filename)
-                        raw_image = RawImage(
-                            experiment_id=experiment_id,
-                            timepoint_id=timepoint_id,
-                            file_path=file_path
-                        )
-                        raw_images.append(raw_image)
-            elif os.path.isfile(raw_path):
+            # Add the directory path as is
                 raw_image = RawImage(
                     experiment_id=experiment_id,
-                    timepoint_id=timepoint_id,
-                    file_path=raw_path
+                    file_path=raw_path,
+                    timepoint_id=timepoint_id
                 )
                 raw_images.append(raw_image)
+            logging.info(f'Added raw image: {raw_path} for timepoint index {timepoint_idx}')
+                
     
     return raw_images
 
